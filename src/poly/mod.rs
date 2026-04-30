@@ -1,6 +1,8 @@
+mod cs;
 mod derive;
 mod hots;
 mod hvc;
+mod kahe;
 mod ter_poly;
 
 use std::{
@@ -10,8 +12,11 @@ use std::{
 
 pub use hots::HOTSNTTPoly;
 pub use hots::HOTSPoly;
+pub use hvc::{pointwise_dot, pointwise_mac, pointwise_sum, pointwise_sum_polys};
 pub use hvc::HVCNTTPoly;
 pub use hvc::HVCPoly;
+pub use cs::{pointwise_dot as pointwise_dot_cs, CsNTTPoly, CsPoly};
+pub use kahe::{pointwise_dot as pointwise_dot_kahe, KaheNTTPoly, KahePoly};
 use rand::Rng;
 pub use ter_poly::TerPolyCoeffEncoding;
 

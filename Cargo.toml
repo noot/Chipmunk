@@ -17,4 +17,8 @@ ark-std = "0.4.0"
 [features]
 # default = [ ]
 default = [ "parallel", "ark-std/print-trace" ]
-parallel = [] 
+parallel = []
+# Faster NTT: Barrett reduction (scalar) + AVX2 vectorisation (HVC, x86_64).
+# Bit-exact with the scalar `% q` baseline. Off by default to keep the
+# reference path easy to A/B against.
+fast-ntt = []

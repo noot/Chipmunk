@@ -12,10 +12,13 @@ use sha2::Digest;
 use sha2::Sha256;
 use std::ops::Mul;
 
+mod hvc_mont_i16_param;
 mod hvc_ntt;
 mod hvc_ntt_param;
+mod simd;
 
 pub use hvc_ntt::HVCNTTPoly;
+pub use simd::{pointwise_dot, pointwise_mac, pointwise_sum, pointwise_sum_polys};
 
 #[derive(Debug, Clone, Copy)]
 // HVC polynomials in canonical encoding
@@ -43,6 +46,22 @@ impl Mul for HVCPoly {
 }
 
 impl HVCPoly {
+    /// Construct an HVCPoly from a coefficient array.
+    pub fn from_coeffs(coeffs: [i32; N]) -> Self {
+        Self { coeffs }
+    }
+
+    /// Borrow the coefficient array.
+    pub fn coeffs(&self) -> &[i32; N] {
+        &self.coeffs
+    }
+
+    /// Mutably borrow the coefficient array. Lets callers write polynomials
+    /// in place without going through `from_coeffs(...)` (which copies).
+    pub fn coeffs_mut(&mut self) -> &mut [i32; N] {
+        &mut self.coeffs
+    }
+
     /// decompose a polynomial into binary polynomials
     pub fn decompose_zz(&self) -> [HVCPoly; HVC_WIDTH] {
         let mut res = [HVCPoly::default(); HVC_WIDTH];

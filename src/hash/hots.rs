@@ -49,11 +49,11 @@ impl HOTSHash {
             .collect();
 
         #[cfg(not(feature = "parallel"))]
-        let prod_ntt: Vec<HOTSNTTPoly> = self
+        let prod_ntt: Vec<HVCNTTPoly> = self
             .param_h
             .iter()
             .zip(inputs.iter())
-            .map(|(x, y)| *x * HOTSNTTPoly::from(y))
+            .map(|(x, y)| *x * HVCNTTPoly::from(y))
             .collect();
 
         for e in prod_ntt {

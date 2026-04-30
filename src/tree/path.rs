@@ -1,6 +1,7 @@
 use ark_std::{end_timer, start_timer};
 use rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
+use crate::hash::LinearHash;
 use crate::poly::Polynomial;
 use crate::{
     poly::HVCPoly, randomize_path::RandomizedPath, randomizer::Randomizers, HVCHash, HEIGHT,
@@ -9,21 +10,24 @@ use core::fmt;
 use std::fmt::Display;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Path {
-    pub(crate) nodes: Vec<(HVCPoly, HVCPoly)>, // left and right nodes
-    pub(crate) index: usize,
+pub struct Path<H: LinearHash = HVCHash> {
+    pub nodes: Vec<(H::Poly, H::Poly)>, // left and right nodes
+    pub index: usize,
 }
 
-impl Default for Path {
+impl<H: LinearHash> Default for Path<H> {
     fn default() -> Self {
         Self {
-            nodes: [(HVCPoly::default(), HVCPoly::default()); HEIGHT - 1].to_vec(),
+            nodes: vec![(H::Poly::default(), H::Poly::default()); HEIGHT - 1],
             index: 0,
         }
     }
 }
 
-impl Display for Path {
+impl<H: LinearHash> Display for Path<H>
+where
+    H::Poly: Display,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let position_list = self.position_list();
         for ((i, (left, right)), is_right_node) in self.nodes.iter().enumerate().zip(position_list)
@@ -39,7 +43,7 @@ impl Display for Path {
     }
 }
 
-impl Path {
+impl<H: LinearHash> Path<H> {
     /// The position of on_path node in `leaf_and_sibling_hash` and `non_leaf_and_sibling_hash_path`.
     /// `position[i]` is 0 (false) iff `i`th on-path node from top to bottom is on the left.
     ///
@@ -51,7 +55,11 @@ impl Path {
     }
 
     /// verifies the path against a root
-    pub fn verify(&self, root: &HVCPoly, hasher: &HVCHash) -> bool {
+    pub fn verify(&self, root: &H::Poly, hasher: &H) -> bool
+    where
+        H: Sync,
+        H::Poly: Send + Sync,
+    {
         let timer = start_timer!(|| "hvc path verify");
         // check that the first two elements hashes to root
         if hasher.decom_then_hash(&self.nodes[0].0, &self.nodes[0].1) != *root {
@@ -80,7 +88,9 @@ impl Path {
         end_timer!(timer);
         checks
     }
+}
 
+impl Path<HVCHash> {
     pub(crate) fn aggregate_with_randomizers(
         paths: &[Self],
         randomizers: &Randomizers,

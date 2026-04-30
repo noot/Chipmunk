@@ -43,12 +43,15 @@ macro_rules! impl_poly {
         }
 
         impl std::ops::AddAssign for $poly {
-            // Coefficient wise additions with mod reduction.
+            // Coefficient wise additions with mod reduction. Widened to i64
+            // so this is safe at moduli close to i32::MAX/2.
             fn add_assign(&mut self, other: Self) {
                 self.coeffs
                     .iter_mut()
                     .zip(other.coeffs)
-                    .for_each(|(x, y)| *x = (*x + y) % $modulus as i32)
+                    .for_each(|(x, y)| {
+                        *x = (((*x as i64) + (y as i64)) % $modulus as i64) as i32
+                    })
             }
         }
 
@@ -64,12 +67,14 @@ macro_rules! impl_poly {
         }
 
         impl std::ops::SubAssign for $poly {
-            // Coefficient wise additions with mod reduction.
+            // Coefficient wise subtraction with mod reduction.
             fn sub_assign(&mut self, other: Self) {
                 self.coeffs
                     .iter_mut()
                     .zip(other.coeffs)
-                    .for_each(|(x, y)| *x = (*x - y) % $modulus as i32)
+                    .for_each(|(x, y)| {
+                        *x = (((*x as i64) - (y as i64)) % $modulus as i64) as i32
+                    })
             }
         }
     };
@@ -165,22 +170,28 @@ macro_rules! impl_ntt_poly {
             }
         }
 
+        // Scalar reference NTT (uses `% q`). Compiled when `fast-ntt` is off.
+        // Under `fast-ntt`, the invoking module must supply `fn ntt` / `fn inv_ntt`
+        // in scope. Add/sub intermediates are widened to i64 so the macro
+        // remains correct for moduli up to ~2^30 (e.g. KAHE_MODULUS).
+        #[cfg(not(feature = "fast-ntt"))]
         fn ntt(p: &mut [i32; $dim]) {
+            let q = $modulus as i64;
             let mut t = $dim;
-            for l in 0..9 {
+            for l in 0..crate::LOG_N {
                 let m = 1 << l;
                 let ht = t >> 1;
                 let mut i = 0;
                 let mut j1 = 0;
                 while i < m {
-                    let s = NTT_TABLE[m + i];
+                    let s = NTT_TABLE[m + i] as i64;
                     let j2 = j1 + ht;
                     let mut j = j1;
                     while j < j2 {
-                        let u = p[j];
-                        let v = ((p[j + ht] as i64) * (s as i64) % $modulus as i64) as i32;
-                        p[j] = (u + v) % $modulus;
-                        p[j + ht] = (u + $modulus - v) % $modulus;
+                        let u = p[j] as i64;
+                        let v = (p[j + ht] as i64) * s % q;
+                        p[j] = ((u + v) % q) as i32;
+                        p[j + ht] = ((u + q - v) % q) as i32;
                         j += 1;
                     }
                     i += 1;
@@ -190,7 +201,9 @@ macro_rules! impl_ntt_poly {
             }
         }
 
+        #[cfg(not(feature = "fast-ntt"))]
         fn inv_ntt(p: &mut [i32; $dim]) {
+            let q = $modulus as i64;
             let mut t = 1;
             let mut m = N;
 
@@ -201,14 +214,13 @@ macro_rules! impl_ntt_poly {
                 let mut j1 = 0;
                 while i < hm {
                     let j2 = j1 + t;
-                    let s = INV_NTT_TABLE[hm + i];
+                    let s = INV_NTT_TABLE[hm + i] as i64;
                     let mut j = j1;
                     while j < j2 {
-                        let u = p[j];
-                        let v = p[j + t];
-                        p[j] = (u + v) % $modulus;
-                        p[j + t] =
-                            (((u + $modulus - v) as i64) * (s as i64) % $modulus as i64) as i32;
+                        let u = p[j] as i64;
+                        let v = p[j + t] as i64;
+                        p[j] = ((u + v) % q) as i32;
+                        p[j + t] = ((u + q - v) * s % q) as i32;
                         j += 1;
                     }
                     i += 1;
@@ -230,6 +242,27 @@ macro_rules! impl_ntt_poly {
                 }
                 true
             }
+
+            /// Sample a uniformly random polynomial directly in NTT
+            /// representation. Each slot is independently uniform in
+            /// `[0, q)`, matching the convention of NTT outputs and so
+            /// statistically equivalent to
+            /// `NTTPoly::from(&Poly::rand_poly(rng))` while skipping the
+            /// forward NTT — valid because NTT is a bijection over Z_q^N
+            /// and uniform input gives uniform output.
+            pub fn rand_ntt_poly<R: rand::Rng>(rng: &mut R) -> Self {
+                let mut res = Self::default();
+                let threshold = <$poly as crate::poly::Polynomial>::SAMPLE_THRESHOLD;
+                let modulus = $modulus as u32;
+                for e in res.coeffs.iter_mut() {
+                    let mut tmp = rng.next_u32();
+                    while tmp >= threshold {
+                        tmp = rng.next_u32();
+                    }
+                    *e = (tmp % modulus) as i32;
+                }
+                res
+            }
         }
     };
 }
@@ -250,17 +283,20 @@ macro_rules! impl_signed_poly_functions {
 
             // school book multiplication
             // slow. only used for correctness checking
+            // Accumulator widened to i64 so partial sums of up to N·(q-1)
+            // products fit safely at moduli near 2^30.
             fn schoolbook(a: &Self, b: &Self) -> Self {
-                let mut buf = [0i32; $dim * 2];
+                let mut buf = [0i64; $dim * 2];
                 let mut c = [0; $dim];
+                let q = $modulus as i64;
                 for i in 0..$dim {
                     for j in 0..$dim {
-                        buf[i + j] +=
-                            ((a.coeffs[i] as i64) * (b.coeffs[j] as i64) % $modulus as i64) as i32;
+                        buf[i + j] += (a.coeffs[i] as i64) * (b.coeffs[j] as i64) % q;
                     }
                 }
                 for i in 0..$dim {
-                    c[i] = crate::poly::lift(buf[i] - buf[i + $dim as usize], $modulus) as i32;
+                    let d = (buf[i] - buf[i + $dim as usize]) % q;
+                    c[i] = crate::poly::lift(d as i32, $modulus) as i32;
                 }
                 Self { coeffs: c }
             }
@@ -294,7 +330,7 @@ macro_rules! impl_signed_poly_functions {
             /// If the polynomial's coefficients are ternary
             fn is_ternary(&self) -> bool {
                 for &e in self.coeffs.iter() {
-                    if e != 1 && e != -1 {
+                    if e != 1 && e != -1 && e != 0 {
                         return false;
                     }
                 }
@@ -309,10 +345,10 @@ macro_rules! impl_signed_poly_functions {
                 let mut tmp = rng.next_u32();
 
                 while ct < half_weight {
-                    let index = (tmp & 0x1FF) as usize;
-                    tmp >>= 9;
+                    let index = (tmp & ($dim as u32 - 1)) as usize;
+                    tmp >>= crate::LOG_N;
                     rng_ct += 1;
-                    if rng_ct == 3 {
+                    if rng_ct == 32 / crate::LOG_N {
                         tmp = rng.next_u32();
                         rng_ct = 0;
                     }
@@ -323,10 +359,10 @@ macro_rules! impl_signed_poly_functions {
                 }
                 ct = 0;
                 while ct < half_weight {
-                    let index = (tmp & 0x1FF) as usize;
-                    tmp >>= 9;
+                    let index = (tmp & ($dim as u32 - 1)) as usize;
+                    tmp >>= crate::LOG_N;
                     rng_ct += 1;
-                    if rng_ct == 3 {
+                    if rng_ct == 32 / crate::LOG_N {
                         tmp = rng.next_u32();
                         rng_ct = 0;
                     }
@@ -342,7 +378,7 @@ macro_rules! impl_signed_poly_functions {
             /// Sample a random binary polynomial
             fn rand_binary<R: Rng>(rng: &mut R) -> Self {
                 let mut res = Self::default();
-                for i in 0..16 {
+                for i in 0..($dim / 32) {
                     let mut tmp = rng.next_u32();
                     for j in 0..32 {
                         res.coeffs[i * 32 + j] = (tmp & 1) as i32;
@@ -362,7 +398,7 @@ macro_rules! impl_signed_poly_functions {
                     let tmp = rng.next_u32() as usize;
                     if res.coeffs[(tmp % $dim) as usize] == 0 {
                         ct += 1;
-                        if (tmp >> 9) & 1 == 1 {
+                        if (tmp >> crate::LOG_N) & 1 == 1 {
                             res.coeffs[(tmp % $dim) as usize] = 1;
                         } else {
                             res.coeffs[(tmp % $dim) as usize] = -1;

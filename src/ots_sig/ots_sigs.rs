@@ -29,7 +29,7 @@ impl HotsSig {
 
         #[cfg(not(feature = "parallel"))]
         self.sigma.iter_mut().for_each(|x| {
-            *x = *x * *ternary;
+            *x = *x * HOTSPoly::from(ternary);
         });
 
         self.is_randomized = true;

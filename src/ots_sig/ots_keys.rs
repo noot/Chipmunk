@@ -98,11 +98,11 @@ impl RandomizedHOTSPK {
 
         #[cfg(not(feature = "parallel"))]
         self.v0.iter_mut().for_each(|x| {
-            *x = SignedPoly::ter_mul_bin(&ternary_coeffs, x);
+            *x = HVCPoly::ter_mul_bin(&ternary_coeffs, x);
         });
         #[cfg(not(feature = "parallel"))]
         self.v1.iter_mut().for_each(|x| {
-            *x = SignedPoly::ter_mul_bin(&ternary_coeffs, x);
+            *x = HVCPoly::ter_mul_bin(&ternary_coeffs, x);
         });
 
         #[cfg(feature = "parallel")]
@@ -132,9 +132,15 @@ impl RandomizedHOTSPK {
     pub(crate) fn aggregate_with_randomizers(pks: &[Self], randomizers: &Randomizers) -> Self {
         let timer = start_timer!(|| format!("aggregating {} HOTS pks", pks.len()));
         let mut randomized_pks: Vec<Self> = pks.to_vec();
+        #[cfg(feature = "parallel")]
         randomized_pks
             .par_iter_mut()
             .zip(randomizers.poly.par_iter())
+            .for_each(|(x, r)| x.randomize_with(r));
+        #[cfg(not(feature = "parallel"))]
+        randomized_pks
+            .iter_mut()
+            .zip(randomizers.poly.iter())
             .for_each(|(x, r)| x.randomize_with(r));
 
         let mut res = randomized_pks[0];

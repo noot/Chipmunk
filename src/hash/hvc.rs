@@ -2,9 +2,7 @@ use ark_std::{end_timer, start_timer, Zero};
 use rand::Rng;
 
 use crate::poly::Polynomial;
-use crate::{HVCNTTPoly, HVCPoly, HVC_MODULUS, HVC_WIDTH};
-#[cfg(feature = "parallel")]
-use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use crate::{pointwise_mac, HVCNTTPoly, HVCPoly, HVC_MODULUS, HVC_WIDTH};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct HVCHash {
@@ -74,38 +72,25 @@ impl HVCHash {
         let mut inputs = inputs.to_vec();
         inputs.iter_mut().for_each(|x| x.lift());
 
-        #[cfg(feature = "parallel")]
-        let prod_ntt: Vec<HVCNTTPoly> = self
-            .param_h
-            .iter()
-            .zip(inputs.iter())
-            .map(|(x, y)| (*x, *y))
-            .collect::<Vec<(HVCNTTPoly, HVCPoly)>>()
-            .into_par_iter()
-            .map(|(x, y)| x * HVCNTTPoly::from(&y))
-            .collect();
+        let inputs_ntt: Vec<HVCNTTPoly> =
+            inputs.iter().map(|p| HVCNTTPoly::from(p)).collect();
 
-        #[cfg(not(feature = "parallel"))]
-        let prod_ntt: Vec<HVCNTTPoly> = self
-            .param_h
-            .iter()
-            .zip(inputs.iter())
-            .map(|(x, y)| *x * HVCNTTPoly::from(y))
-            .collect();
+        let a_refs: Vec<&[i32; crate::N]> =
+            self.param_h.iter().map(|p| &p.coeffs).collect();
+        let b_refs: Vec<&[i32; crate::N]> =
+            inputs_ntt.iter().map(|p| &p.coeffs).collect();
 
-        for e in prod_ntt {
-            res += e;
-        }
+        pointwise_mac(&mut res.coeffs, &a_refs, &b_refs);
 
         // convert the polynomial from NTT domain back to integers
         (&res).into()
     }
 
-    pub(crate) fn decom_then_hash(&self, left: &HVCPoly, right: &HVCPoly) -> HVCPoly {
+    pub fn decom_then_hash(&self, left: &HVCPoly, right: &HVCPoly) -> HVCPoly {
         self.hash_separate_inputs(&left.decompose_r(), &right.decompose_r())
     }
 
-    pub(crate) fn hash_separate_inputs(&self, left: &[HVCPoly], right: &[HVCPoly]) -> HVCPoly {
+    pub fn hash_separate_inputs(&self, left: &[HVCPoly], right: &[HVCPoly]) -> HVCPoly {
         assert_eq!(left.len(), HVC_WIDTH);
         assert_eq!(right.len(), HVC_WIDTH);
 
