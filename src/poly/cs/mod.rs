@@ -12,12 +12,12 @@ use sha2::Digest;
 use sha2::Sha256;
 use std::ops::Mul;
 
-mod cs_mont_param;
+mod cs_aux_param;
 mod cs_ntt;
-mod cs_ntt_param;
-mod simd;
 
 pub use cs_ntt::{pointwise_dot, CsNTTPoly};
+#[cfg(test)]
+pub(crate) use cs_ntt::CS_AUX_RING64;
 
 #[derive(Debug, Clone, Copy)]
 // CS polynomials in canonical encoding (centered representatives).

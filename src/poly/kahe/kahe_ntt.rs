@@ -1,203 +1,172 @@
-use super::kahe_ntt_param::{INV_NTT_TABLE, NTT_TABLE};
-use crate::normalize;
-use crate::{impl_ntt_poly, impl_poly, KahePoly, KAHE_ONE_OVER_N};
-use crate::{KAHE_MODULUS, N};
+use super::kahe_ntt64_param as tables;
+use super::{lift64, normalize64, KahePoly};
+use crate::poly::ntt64::{self, Ring64};
+use crate::{KAHE_MODULUS, KAHE_SAMPLE_THRESHOLD, N};
+
+pub(crate) const KAHE_RING64: Ring64 = Ring64 {
+    q: tables::MODULUS,
+    q_inv_neg: tables::Q_INV_NEG64,
+    r2: tables::R2_MOD_Q,
+    ntt_table: tables::NTT_TABLE,
+    ntt_table_shoup: tables::NTT_TABLE_SHOUP,
+    inv_ntt_table: tables::INV_NTT_TABLE,
+    inv_ntt_table_shoup: tables::INV_NTT_TABLE_SHOUP,
+    n_inv: tables::N_INV,
+    n_inv_shoup: tables::N_INV_SHOUP,
+};
 
 #[derive(Debug, Clone, Copy)]
-// KAHE polynomials in NTT encoding
+// KAHE polynomials in NTT encoding, coefficients canonical in [0, q).
 pub struct KaheNTTPoly {
-    pub(crate) coeffs: [i32; N as usize],
+    pub(crate) coeffs: [u64; N as usize],
 }
 
-impl_poly!(KaheNTTPoly, KAHE_MODULUS, N);
-impl_ntt_poly!(KahePoly, KaheNTTPoly, KAHE_MODULUS, N, KAHE_ONE_OVER_N);
-
-// =============================================================
-// Fast NTT path (feature = "fast-ntt"): scalar Barrett + AVX2 dispatch.
-// =============================================================
-
-#[cfg(feature = "fast-ntt")]
-const Q: i32 = KAHE_MODULUS;
-#[cfg(feature = "fast-ntt")]
-const Q64: i64 = KAHE_MODULUS as i64;
-// Barrett: q ≈ 2^30, product q·s gives < 2^60. K=60, m fits in 31 bits.
-#[cfg(feature = "fast-ntt")]
-const KAHE_BARRETT_K: u32 = 60;
-#[cfg(feature = "fast-ntt")]
-const KAHE_BARRETT_M: i64 = (1i64 << KAHE_BARRETT_K) / Q64;
-
-#[cfg(feature = "fast-ntt")]
-#[inline(always)]
-fn barrett(x: i64) -> i32 {
-    // x in [0, 2^60). m·x ≈ 2^91 — use i128 intermediate.
-    let t = (((x as i128) * (KAHE_BARRETT_M as i128)) >> KAHE_BARRETT_K) as i64;
-    let r = x - t * Q64;
-    let r = if r >= Q64 { r - Q64 } else { r };
-    let r = if r < 0 { r + Q64 } else { r };
-    r as i32
+impl Default for KaheNTTPoly {
+    fn default() -> Self {
+        Self {
+            coeffs: [0u64; N as usize],
+        }
+    }
 }
 
-#[cfg(feature = "fast-ntt")]
-#[inline(always)]
-fn add_mod(a: i32, b: i32) -> i32 {
-    let s = a + b;
-    if s >= Q { s - Q } else { s }
+impl PartialEq for KaheNTTPoly {
+    fn eq(&self, rhs: &Self) -> bool {
+        self.coeffs == rhs.coeffs
+    }
 }
 
-#[cfg(feature = "fast-ntt")]
-#[inline(always)]
-fn sub_mod(a: i32, b: i32) -> i32 {
-    let d = a - b;
-    if d < 0 { d + Q } else { d }
+impl std::fmt::Display for KaheNTTPoly {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{:#16x} {:#16x} {:#16x} {:#16x}",
+            self.coeffs[0], self.coeffs[1], self.coeffs[2], self.coeffs[3]
+        )
+    }
 }
 
-#[cfg(feature = "fast-ntt")]
-#[inline(always)]
-fn canon(x: i32) -> i32 {
-    if x < 0 { x + Q } else { x }
+impl From<&KahePoly> for KaheNTTPoly {
+    fn from(poly: &KahePoly) -> Self {
+        let q = KAHE_RING64.q;
+        let mut coeffs = [0u64; N];
+        for (c, &x) in coeffs.iter_mut().zip(poly.coeffs.iter()) {
+            *c = lift64(x, KAHE_MODULUS) as u64;
+        }
+        debug_assert!(coeffs.iter().all(|&c| c < q));
+        ntt64::ntt(&KAHE_RING64, &mut coeffs);
+        Self { coeffs }
+    }
 }
 
-/// Scalar butterfly stages of the forward NTT, starting at stage `start_l`
-/// with `t = 1 << (9 - start_l)`. Inputs must already be in `[0, q)`.
-#[cfg(feature = "fast-ntt")]
-pub(super) fn ntt_stages_scalar(p: &mut [i32; N as usize], start_l: usize, mut t: usize) {
-    for l in start_l..crate::LOG_N {
-        let m = 1usize << l;
-        let ht = t >> 1;
-        let mut i = 0usize;
-        let mut j1 = 0usize;
-        while i < m {
-            let s = canon(NTT_TABLE[m + i]);
-            let j2 = j1 + ht;
-            let mut j = j1;
-            while j < j2 {
-                let u = p[j];
-                let v = barrett((p[j + ht] as i64) * (s as i64));
-                p[j] = add_mod(u, v);
-                p[j + ht] = sub_mod(u, v);
-                j += 1;
+impl From<KahePoly> for KaheNTTPoly {
+    fn from(poly: KahePoly) -> Self {
+        Self::from(&poly)
+    }
+}
+
+impl From<&KaheNTTPoly> for KahePoly {
+    fn from(poly: &KaheNTTPoly) -> Self {
+        let mut buf = poly.coeffs;
+        ntt64::inv_ntt(&KAHE_RING64, &mut buf);
+        let mut coeffs = [0i64; N];
+        for (c, &x) in coeffs.iter_mut().zip(buf.iter()) {
+            *c = normalize64(x as i64, KAHE_MODULUS);
+        }
+        KahePoly { coeffs }
+    }
+}
+
+impl From<KaheNTTPoly> for KahePoly {
+    fn from(poly: KaheNTTPoly) -> Self {
+        KahePoly::from(&poly)
+    }
+}
+
+impl std::ops::Add for KaheNTTPoly {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let mut res = self;
+        res += other;
+        res
+    }
+}
+
+impl std::ops::AddAssign for KaheNTTPoly {
+    fn add_assign(&mut self, other: Self) {
+        let q = KAHE_RING64.q;
+        self.coeffs
+            .iter_mut()
+            .zip(other.coeffs)
+            .for_each(|(x, y)| *x = ntt64::add_mod(*x, y, q));
+    }
+}
+
+impl std::ops::Sub for KaheNTTPoly {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        let q = KAHE_RING64.q;
+        let mut res = self;
+        res.coeffs
+            .iter_mut()
+            .zip(other.coeffs)
+            .for_each(|(x, y)| *x = ntt64::sub_mod(*x, y, q));
+        res
+    }
+}
+
+impl std::ops::Mul for KaheNTTPoly {
+    type Output = Self;
+
+    // Coefficient-wise multiplication over the NTT domain.
+    fn mul(self, other: Self) -> Self {
+        let mut res = Self::default();
+        for (e, (&f, &g)) in res
+            .coeffs
+            .iter_mut()
+            .zip(self.coeffs.iter().zip(other.coeffs.iter()))
+        {
+            *e = ntt64::mul_mod(f, g, &KAHE_RING64);
+        }
+        res
+    }
+}
+
+impl KaheNTTPoly {
+    pub(crate) fn is_invertible(&self) -> bool {
+        self.coeffs.iter().all(|&e| e != 0)
+    }
+
+    /// Sample a uniformly random polynomial directly in NTT representation.
+    /// Valid because the NTT is a bijection over Z_q^N, so uniform slots give
+    /// a uniform ring element.
+    pub fn rand_ntt_poly<R: rand::Rng>(rng: &mut R) -> Self {
+        let mut res = Self::default();
+        for e in res.coeffs.iter_mut() {
+            let mut tmp = rng.next_u64();
+            while tmp >= KAHE_SAMPLE_THRESHOLD {
+                tmp = rng.next_u64();
             }
-            i += 1;
-            j1 += t;
+            *e = tmp % KAHE_MODULUS as u64;
         }
-        t = ht;
+        res
     }
 }
 
-/// Scalar butterfly stages of the inverse NTT, run for `iters` iterations
-/// starting from `t = start_t`, `m = start_m`. Inputs must be in `[0, q)`.
-/// Returns updated `(t, m)` for resumption.
-#[cfg(feature = "fast-ntt")]
-pub(super) fn inv_ntt_stages_scalar(
-    p: &mut [i32; N as usize],
-    iters: usize,
-    mut t: usize,
-    mut m: usize,
-) -> (usize, usize) {
-    for _ in 0..iters {
-        if m <= 1 {
-            break;
-        }
-        let hm = m >> 1;
-        let dt = t << 1;
-        let mut i = 0usize;
-        let mut j1 = 0usize;
-        while i < hm {
-            let j2 = j1 + t;
-            let s = canon(INV_NTT_TABLE[hm + i]);
-            let mut j = j1;
-            while j < j2 {
-                let u = p[j];
-                let v = p[j + t];
-                p[j] = add_mod(u, v);
-                let d = sub_mod(u, v);
-                p[j + t] = barrett((d as i64) * (s as i64));
-                j += 1;
-            }
-            i += 1;
-            j1 += dt;
-        }
-        t = dt;
-        m = hm;
-    }
-    (t, m)
+/// NTT-domain inner product (`Σ a[k] · b[k]`), AVX2-dispatched.
+pub fn pointwise_dot(a: &[KaheNTTPoly], b: &[KaheNTTPoly]) -> KaheNTTPoly {
+    debug_assert_eq!(a.len(), b.len());
+    let mut res = KaheNTTPoly::default();
+    let a_refs: Vec<&[u64; N]> = a.iter().map(|p| &p.coeffs).collect();
+    let b_refs: Vec<&[u64; N]> = b.iter().map(|p| &p.coeffs).collect();
+    ntt64::pointwise_mac(&KAHE_RING64, &mut res.coeffs, &a_refs, &b_refs);
+    res
 }
-
-#[cfg(feature = "fast-ntt")]
-fn inv_ntt_final_scale(p: &mut [i32; N as usize]) {
-    let inv_n = canon(KAHE_ONE_OVER_N);
-    for e in p.iter_mut() {
-        *e = barrett((*e as i64) * (inv_n as i64));
-    }
-}
-
-#[cfg(feature = "fast-ntt")]
-fn ntt_scalar(p: &mut [i32; N as usize]) {
-    for e in p.iter_mut() {
-        *e = canon(*e);
-    }
-    ntt_stages_scalar(p, 0, N as usize);
-}
-
-#[cfg(feature = "fast-ntt")]
-fn inv_ntt_scalar(p: &mut [i32; N as usize]) {
-    for e in p.iter_mut() {
-        *e = canon(*e);
-    }
-    inv_ntt_stages_scalar(p, crate::LOG_N, 1, N as usize);
-    inv_ntt_final_scale(p);
-}
-
-#[cfg(feature = "fast-ntt")]
-type NttFn = fn(&mut [i32; N as usize]);
-
-#[cfg(feature = "fast-ntt")]
-static NTT_DISPATCH: std::sync::OnceLock<NttFn> = std::sync::OnceLock::new();
-#[cfg(feature = "fast-ntt")]
-static INV_NTT_DISPATCH: std::sync::OnceLock<NttFn> = std::sync::OnceLock::new();
-
-#[cfg(feature = "fast-ntt")]
-fn select_ntt() -> NttFn {
-    #[cfg(target_arch = "x86_64")]
-    {
-        if std::is_x86_feature_detected!("avx2") {
-            return super::simd::ntt_avx2_dispatch;
-        }
-    }
-    ntt_scalar
-}
-
-#[cfg(feature = "fast-ntt")]
-fn select_inv_ntt() -> NttFn {
-    #[cfg(target_arch = "x86_64")]
-    {
-        if std::is_x86_feature_detected!("avx2") {
-            return super::simd::inv_ntt_avx2_dispatch;
-        }
-    }
-    inv_ntt_scalar
-}
-
-#[cfg(feature = "fast-ntt")]
-fn ntt(p: &mut [i32; N as usize]) {
-    (NTT_DISPATCH.get_or_init(select_ntt))(p)
-}
-
-#[cfg(feature = "fast-ntt")]
-fn inv_ntt(p: &mut [i32; N as usize]) {
-    (INV_NTT_DISPATCH.get_or_init(select_inv_ntt))(p)
-}
-
-/// NTT-domain inner product (`Σ a[k] · b[k]`). Re-exported from `simd` so
-/// callers see one function that dispatches to AVX2 when available.
-pub use super::simd::pointwise_dot;
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use super::{inv_ntt, ntt};
-    use crate::poly::Polynomial;
-    use crate::{poly::lift, KahePoly, KAHE_MODULUS};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
@@ -244,8 +213,15 @@ mod test {
         let b_ntt: Vec<KaheNTTPoly> = vec![(&b0).into(), (&b1).into()];
         let dot = pointwise_dot(&a_ntt, &b_ntt);
         let expected = a_ntt[0] * b_ntt[0] + a_ntt[1] * b_ntt[1];
-        for (x, y) in dot.coeffs.iter().zip(expected.coeffs.iter()) {
-            assert_eq!(lift(*x, KAHE_MODULUS), lift(*y, KAHE_MODULUS));
-        }
+        assert_eq!(dot, expected);
+    }
+
+    #[test]
+    fn test_rand_ntt_poly_roundtrip() {
+        let mut rng = ChaCha20Rng::from_seed([2u8; 32]);
+        let p_ntt = KaheNTTPoly::rand_ntt_poly(&mut rng);
+        let p: KahePoly = (&p_ntt).into();
+        let back: KaheNTTPoly = (&p).into();
+        assert_eq!(p_ntt, back);
     }
 }

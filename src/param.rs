@@ -25,6 +25,22 @@ const fn sel_u32(v512: u32, v1024: u32, v2048: u32) -> u32 {
         _ => panic!("unsupported N: set N to 512, 1024, or 2048"),
     }
 }
+const fn sel_i64(v512: i64, v1024: i64, v2048: i64) -> i64 {
+    match N {
+        512 => v512,
+        1024 => v1024,
+        2048 => v2048,
+        _ => panic!("unsupported N: set N to 512, 1024, or 2048"),
+    }
+}
+const fn sel_u64(v512: u64, v1024: u64, v2048: u64) -> u64 {
+    match N {
+        512 => v512,
+        1024 => v1024,
+        2048 => v2048,
+        _ => panic!("unsupported N: set N to 512, 1024, or 2048"),
+    }
+}
 /// Select one of three precomputed twiddle tables by `N`. Used by the per-ring
 /// NTT parameter modules so a single `const N` drives the whole library.
 pub(crate) const fn pick_slice_i32(
@@ -44,6 +60,18 @@ pub(crate) const fn pick_slice_i16(
     b: &'static [i16],
     c: &'static [i16],
 ) -> &'static [i16] {
+    match N {
+        512 => a,
+        1024 => b,
+        2048 => c,
+        _ => panic!("unsupported N: set N to 512, 1024, or 2048"),
+    }
+}
+pub(crate) const fn pick_slice_u64(
+    a: &'static [u64],
+    b: &'static [u64],
+    c: &'static [u64],
+) -> &'static [u64] {
     match N {
         512 => a,
         1024 => b,
@@ -110,31 +138,33 @@ pub const HVC_SAMPLE_THRESHOLD: u32 = sel_u32(4294951765, 4294962732, 4294965655
 pub const HVC_WIDTH: usize = 3;
 
 // =================KAHE PARAM=================
-/// q for the KAHE ring. Decoupled from HVC's q so that Willow-style RLWE-KAHE
-/// gets a larger plaintext budget. Selected so q ≡ 1 (mod 2N), q prime, and
-/// q < 2^30 (so q² fits comfortably in i64 during NTT multiplication). Per-N:
-/// 512=>1073738753, 1024=>1073707009, 2048=>1073692673.
-pub const KAHE_MODULUS: i32 = sel_i32(59393, 1073707009, 271163393);
+/// q for the KAHE ring — a 64-bit ring (coefficients are i64). Prime,
+/// ≡ 1 (mod 4096) so a single prime serves all supported N, ≈ 2^48.3 —
+/// sized for the t = 2^36 plaintext modulus noise budget. Values below are
+/// regenerated/validated by `scripts/gen_ntt_n.py`.
+pub const KAHE_MODULUS: i64 = sel_i64(347280875347969, 347280875347969, 347280875347969);
 /// (q-1)/2 for KAHE_MODULUS.
-pub const KAHE_MODULUS_OVER_TWO: i32 = sel_i32(29696, 536853504, 135581696);
-/// 1/N mod KAHE_MODULUS.
-pub const KAHE_ONE_OVER_N: i32 = sel_i32(59277, 1072658467, 271030989);
-/// Largest multiple of KAHE_MODULUS that is < 2^32. Used for unbiased
-/// rejection sampling of u32 → Z_q.
-pub const KAHE_SAMPLE_THRESHOLD: u32 = sel_u32(4294945402, 4294828036, 4067450895);
+pub const KAHE_MODULUS_OVER_TWO: i64 = sel_i64(173640437673984, 173640437673984, 173640437673984);
+/// 1/N mod KAHE_MODULUS. (placeholder — written by gen_ntt_n.py)
+pub const KAHE_ONE_OVER_N: i64 = sel_i64(346602592388305, 346941733868137, 347111304608053);
+/// Largest multiple of KAHE_MODULUS that is < 2^64. Used for unbiased
+/// rejection sampling of u64 → Z_q.
+pub const KAHE_SAMPLE_THRESHOLD: u64 = sel_u64(18446518255858069373, 18446518255858069373, 18446518255858069373);
 
 // =================CS PARAM (BDLOP commitment ring)=================
 /// q for the CS (BDLOP) commitment ring, decoupled from HVC's tree-hash ring
-/// and KAHE's encryption ring. `q ≡ 1 (mod 4096)` so a single prime serves all
-/// supported N. Prime, ≈ 2^17.2 (147457 = 9·2^14 + 1). The values below are
-/// regenerated/validated by `scripts/gen_ntt_n.py`.
-pub const CS_MODULUS: i32 = sel_i32(147457, 147457, 147457);
+/// and KAHE's encryption ring. Prime, ≈ 2^17.1. NOT NTT-friendly
+/// (139301 ≡ 37 mod 4096): CsPoly multiplication runs as exact integer
+/// negacyclic convolution over the auxiliary prime in `cs/cs_aux_param.rs`,
+/// reduced mod q afterwards. The values below are regenerated/validated by
+/// `scripts/gen_ntt_n.py`.
+pub const CS_MODULUS: i32 = sel_i32(139301, 139301, 139301);
 /// (q-1)/2 for CS_MODULUS.
-pub const CS_MODULUS_OVER_TWO: i32 = sel_i32(73728, 73728, 73728);
+pub const CS_MODULUS_OVER_TWO: i32 = sel_i32(69650, 69650, 69650);
 /// 1/N mod CS_MODULUS. (placeholder — written by gen_ntt_n.py)
-pub const CS_ONE_OVER_N: i32 = sel_i32(147169, 147313, 147385);
+pub const CS_ONE_OVER_N: i32 = sel_i32(22582, 11291, 75296);
 /// Largest multiple of CS_MODULUS that is < 2^32. (placeholder — written by gen_ntt_n.py)
-pub const CS_SAMPLE_THRESHOLD: u32 = sel_u32(4294832582, 4294832582, 4294832582);
+pub const CS_SAMPLE_THRESHOLD: u32 = sel_u32(4294928432, 4294928432, 4294928432);
 
 // =================ENCODING PARAM==================
 /// the norm bound for alphas and a_star

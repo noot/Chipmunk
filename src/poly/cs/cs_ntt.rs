@@ -1,204 +1,179 @@
-use super::cs_ntt_param::{INV_NTT_TABLE, NTT_TABLE};
-use crate::normalize;
-use crate::{impl_ntt_poly, impl_poly, CsPoly, CS_ONE_OVER_N};
+//! CS multiplication domain. CS q = 139301 is not NTT-friendly (≡ 37 mod
+//! 4096), so `CsNTTPoly` holds the forward NTT of the *centered integer*
+//! coefficients over the auxiliary prime `p = cs_aux_param::MODULUS`
+//! (≡ 1 mod 4096, ≈ 2^58). Pointwise products/sums in this domain compute the
+//! exact integer negacyclic convolution as long as the true integer result
+//! stays within `(-p/2, p/2)` — guaranteed by the protocol norm bounds
+//! (worst case ≈ 2^55.5 for a κ=5 full-range dot). Conversion back to
+//! `CsPoly` centers mod p (recovering the exact integer) and reduces mod q.
+
+use super::cs_aux_param as tables;
+use super::{normalize, CsPoly};
+use crate::poly::ntt64::{self, Ring64};
 use crate::{CS_MODULUS, N};
 
+pub(crate) const CS_AUX_RING64: Ring64 = Ring64 {
+    q: tables::MODULUS,
+    q_inv_neg: tables::Q_INV_NEG64,
+    r2: tables::R2_MOD_Q,
+    ntt_table: tables::NTT_TABLE,
+    ntt_table_shoup: tables::NTT_TABLE_SHOUP,
+    inv_ntt_table: tables::INV_NTT_TABLE,
+    inv_ntt_table_shoup: tables::INV_NTT_TABLE_SHOUP,
+    n_inv: tables::N_INV,
+    n_inv_shoup: tables::N_INV_SHOUP,
+};
+
+const P: u64 = tables::MODULUS;
+
 #[derive(Debug, Clone, Copy)]
-// CS polynomials in NTT encoding
+// CS polynomials in the auxiliary-prime NTT encoding, canonical in [0, p).
 pub struct CsNTTPoly {
-    pub(crate) coeffs: [i32; N as usize],
+    pub(crate) coeffs: [u64; N as usize],
 }
 
-impl_poly!(CsNTTPoly, CS_MODULUS, N);
-impl_ntt_poly!(CsPoly, CsNTTPoly, CS_MODULUS, N, CS_ONE_OVER_N);
-
-// =============================================================
-// Fast NTT path (feature = "fast-ntt"): scalar Barrett + AVX2 dispatch.
-// =============================================================
-
-#[cfg(feature = "fast-ntt")]
-const Q: i32 = CS_MODULUS;
-#[cfg(feature = "fast-ntt")]
-const Q64: i64 = CS_MODULUS as i64;
-// Barrett: q < 2^18, product q·s gives < 2^36 < 2^60. K=60 (shared with the
-// i32 engine), m fits in i64. i128 intermediate keeps m·x exact.
-#[cfg(feature = "fast-ntt")]
-const CS_BARRETT_K: u32 = 60;
-#[cfg(feature = "fast-ntt")]
-const CS_BARRETT_M: i64 = (1i64 << CS_BARRETT_K) / Q64;
-
-#[cfg(feature = "fast-ntt")]
-#[inline(always)]
-fn barrett(x: i64) -> i32 {
-    // x in [0, 2^60). m·x ≈ 2^91 — use i128 intermediate.
-    let t = (((x as i128) * (CS_BARRETT_M as i128)) >> CS_BARRETT_K) as i64;
-    let r = x - t * Q64;
-    let r = if r >= Q64 { r - Q64 } else { r };
-    let r = if r < 0 { r + Q64 } else { r };
-    r as i32
+impl Default for CsNTTPoly {
+    fn default() -> Self {
+        Self {
+            coeffs: [0u64; N as usize],
+        }
+    }
 }
 
-#[cfg(feature = "fast-ntt")]
-#[inline(always)]
-fn add_mod(a: i32, b: i32) -> i32 {
-    let s = a + b;
-    if s >= Q { s - Q } else { s }
+impl PartialEq for CsNTTPoly {
+    fn eq(&self, rhs: &Self) -> bool {
+        self.coeffs == rhs.coeffs
+    }
 }
 
-#[cfg(feature = "fast-ntt")]
-#[inline(always)]
-fn sub_mod(a: i32, b: i32) -> i32 {
-    let d = a - b;
-    if d < 0 { d + Q } else { d }
+impl std::fmt::Display for CsNTTPoly {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{:#16x} {:#16x} {:#16x} {:#16x}",
+            self.coeffs[0], self.coeffs[1], self.coeffs[2], self.coeffs[3]
+        )
+    }
 }
 
-#[cfg(feature = "fast-ntt")]
-#[inline(always)]
-fn canon(x: i32) -> i32 {
-    if x < 0 { x + Q } else { x }
+impl From<&CsPoly> for CsNTTPoly {
+    fn from(poly: &CsPoly) -> Self {
+        // Center mod q first (same ring element, minimal magnitude), then
+        // embed into Z_p.
+        let mut coeffs = [0u64; N];
+        for (c, &x) in coeffs.iter_mut().zip(poly.coeffs.iter()) {
+            let v = normalize(x, CS_MODULUS) as i64;
+            *c = if v < 0 { (P as i64 + v) as u64 } else { v as u64 };
+        }
+        ntt64::ntt(&CS_AUX_RING64, &mut coeffs);
+        Self { coeffs }
+    }
 }
 
-/// Scalar butterfly stages of the forward NTT, starting at stage `start_l`
-/// with `t = 1 << (9 - start_l)`. Inputs must already be in `[0, q)`.
-#[cfg(feature = "fast-ntt")]
-pub(super) fn ntt_stages_scalar(p: &mut [i32; N as usize], start_l: usize, mut t: usize) {
-    for l in start_l..crate::LOG_N {
-        let m = 1usize << l;
-        let ht = t >> 1;
-        let mut i = 0usize;
-        let mut j1 = 0usize;
-        while i < m {
-            let s = canon(NTT_TABLE[m + i]);
-            let j2 = j1 + ht;
-            let mut j = j1;
-            while j < j2 {
-                let u = p[j];
-                let v = barrett((p[j + ht] as i64) * (s as i64));
-                p[j] = add_mod(u, v);
-                p[j + ht] = sub_mod(u, v);
-                j += 1;
+impl From<CsPoly> for CsNTTPoly {
+    fn from(poly: CsPoly) -> Self {
+        Self::from(&poly)
+    }
+}
+
+impl From<&CsNTTPoly> for CsPoly {
+    fn from(poly: &CsNTTPoly) -> Self {
+        let mut buf = poly.coeffs;
+        ntt64::inv_ntt(&CS_AUX_RING64, &mut buf);
+        let mut coeffs = [0i32; N];
+        for (c, &v) in coeffs.iter_mut().zip(buf.iter()) {
+            // Center mod p → the exact integer convolution coefficient.
+            let exact = if v > P / 2 {
+                v as i64 - P as i64
+            } else {
+                v as i64
+            };
+            let q = CS_MODULUS as i64;
+            let mut r = exact % q;
+            if r > q / 2 {
+                r -= q;
             }
-            i += 1;
-            j1 += t;
-        }
-        t = ht;
-    }
-}
-
-/// Scalar butterfly stages of the inverse NTT, run for `iters` iterations
-/// starting from `t = start_t`, `m = start_m`. Inputs must be in `[0, q)`.
-/// Returns updated `(t, m)` for resumption.
-#[cfg(feature = "fast-ntt")]
-pub(super) fn inv_ntt_stages_scalar(
-    p: &mut [i32; N as usize],
-    iters: usize,
-    mut t: usize,
-    mut m: usize,
-) -> (usize, usize) {
-    for _ in 0..iters {
-        if m <= 1 {
-            break;
-        }
-        let hm = m >> 1;
-        let dt = t << 1;
-        let mut i = 0usize;
-        let mut j1 = 0usize;
-        while i < hm {
-            let j2 = j1 + t;
-            let s = canon(INV_NTT_TABLE[hm + i]);
-            let mut j = j1;
-            while j < j2 {
-                let u = p[j];
-                let v = p[j + t];
-                p[j] = add_mod(u, v);
-                let d = sub_mod(u, v);
-                p[j + t] = barrett((d as i64) * (s as i64));
-                j += 1;
+            if r < -q / 2 {
+                r += q;
             }
-            i += 1;
-            j1 += dt;
+            *c = r as i32;
         }
-        t = dt;
-        m = hm;
-    }
-    (t, m)
-}
-
-#[cfg(feature = "fast-ntt")]
-fn inv_ntt_final_scale(p: &mut [i32; N as usize]) {
-    let inv_n = canon(CS_ONE_OVER_N);
-    for e in p.iter_mut() {
-        *e = barrett((*e as i64) * (inv_n as i64));
+        CsPoly { coeffs }
     }
 }
 
-#[cfg(feature = "fast-ntt")]
-fn ntt_scalar(p: &mut [i32; N as usize]) {
-    for e in p.iter_mut() {
-        *e = canon(*e);
+impl From<CsNTTPoly> for CsPoly {
+    fn from(poly: CsNTTPoly) -> Self {
+        CsPoly::from(&poly)
     }
-    ntt_stages_scalar(p, 0, N as usize);
 }
 
-#[cfg(feature = "fast-ntt")]
-fn inv_ntt_scalar(p: &mut [i32; N as usize]) {
-    for e in p.iter_mut() {
-        *e = canon(*e);
+impl std::ops::Add for CsNTTPoly {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let mut res = self;
+        res += other;
+        res
     }
-    inv_ntt_stages_scalar(p, crate::LOG_N, 1, N as usize);
-    inv_ntt_final_scale(p);
 }
 
-#[cfg(feature = "fast-ntt")]
-type NttFn = fn(&mut [i32; N as usize]);
+impl std::ops::AddAssign for CsNTTPoly {
+    // Adds the integer preimages; exact while the summed preimage stays
+    // within (-p/2, p/2).
+    fn add_assign(&mut self, other: Self) {
+        self.coeffs
+            .iter_mut()
+            .zip(other.coeffs)
+            .for_each(|(x, y)| *x = ntt64::add_mod(*x, y, P));
+    }
+}
 
-#[cfg(feature = "fast-ntt")]
-static NTT_DISPATCH: std::sync::OnceLock<NttFn> = std::sync::OnceLock::new();
-#[cfg(feature = "fast-ntt")]
-static INV_NTT_DISPATCH: std::sync::OnceLock<NttFn> = std::sync::OnceLock::new();
+impl std::ops::Sub for CsNTTPoly {
+    type Output = Self;
 
-#[cfg(feature = "fast-ntt")]
-fn select_ntt() -> NttFn {
-    #[cfg(target_arch = "x86_64")]
-    {
-        if std::is_x86_feature_detected!("avx2") {
-            return super::simd::ntt_avx2_dispatch;
+    fn sub(self, other: Self) -> Self {
+        let mut res = self;
+        res.coeffs
+            .iter_mut()
+            .zip(other.coeffs)
+            .for_each(|(x, y)| *x = ntt64::sub_mod(*x, y, P));
+        res
+    }
+}
+
+impl std::ops::Mul for CsNTTPoly {
+    type Output = Self;
+
+    // Coefficient-wise multiplication over the auxiliary-prime NTT domain.
+    fn mul(self, other: Self) -> Self {
+        let mut res = Self::default();
+        for (e, (&f, &g)) in res
+            .coeffs
+            .iter_mut()
+            .zip(self.coeffs.iter().zip(other.coeffs.iter()))
+        {
+            *e = ntt64::mul_mod(f, g, &CS_AUX_RING64);
         }
+        res
     }
-    ntt_scalar
 }
 
-#[cfg(feature = "fast-ntt")]
-fn select_inv_ntt() -> NttFn {
-    #[cfg(target_arch = "x86_64")]
-    {
-        if std::is_x86_feature_detected!("avx2") {
-            return super::simd::inv_ntt_avx2_dispatch;
-        }
-    }
-    inv_ntt_scalar
+/// NTT-domain inner product (`Σ a[k] · b[k]`), AVX2-dispatched. Exact while
+/// the true integer dot stays within `(-p/2, p/2)`.
+pub fn pointwise_dot(a: &[CsNTTPoly], b: &[CsNTTPoly]) -> CsNTTPoly {
+    debug_assert_eq!(a.len(), b.len());
+    let mut res = CsNTTPoly::default();
+    let a_refs: Vec<&[u64; N]> = a.iter().map(|p| &p.coeffs).collect();
+    let b_refs: Vec<&[u64; N]> = b.iter().map(|p| &p.coeffs).collect();
+    ntt64::pointwise_mac(&CS_AUX_RING64, &mut res.coeffs, &a_refs, &b_refs);
+    res
 }
-
-#[cfg(feature = "fast-ntt")]
-fn ntt(p: &mut [i32; N as usize]) {
-    (NTT_DISPATCH.get_or_init(select_ntt))(p)
-}
-
-#[cfg(feature = "fast-ntt")]
-fn inv_ntt(p: &mut [i32; N as usize]) {
-    (INV_NTT_DISPATCH.get_or_init(select_inv_ntt))(p)
-}
-
-/// NTT-domain inner product (`Σ a[k] · b[k]`). Re-exported from `simd` so
-/// callers see one function that dispatches to AVX2 when available.
-pub use super::simd::pointwise_dot;
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use super::{inv_ntt, ntt};
     use crate::poly::Polynomial;
-    use crate::{poly::lift, CsPoly, CS_MODULUS};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
@@ -214,39 +189,51 @@ mod test {
     }
 
     #[test]
-    fn test_arithmetic() {
-        let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
+    fn test_mul_matches_schoolbook() {
+        let mut rng = ChaCha20Rng::from_seed([1u8; 32]);
         for _ in 0..10 {
             let a = CsPoly::rand_poly(&mut rng);
-            let a_ntt: CsNTTPoly = (&a).into();
             let b = CsPoly::rand_poly(&mut rng);
-            let b_ntt: CsNTTPoly = (&b).into();
-
-            let c_ntt = a_ntt * b_ntt;
-            let c: CsPoly = (&c_ntt).into();
+            let c: CsPoly = (&(CsNTTPoly::from(&a) * CsNTTPoly::from(&b))).into();
             let c_rec = CsPoly::schoolbook(&a, &b);
             assert_eq!(c, c_rec);
-
-            let d_ntt = a_ntt + b_ntt;
-            let d: CsPoly = (&d_ntt).into();
-            let d_rec = a + b;
-            assert_eq!(d, d_rec);
         }
     }
 
     #[test]
-    fn test_pointwise_dot() {
-        let mut rng = ChaCha20Rng::from_seed([1u8; 32]);
-        let a0 = CsPoly::rand_poly(&mut rng);
-        let a1 = CsPoly::rand_poly(&mut rng);
-        let b0 = CsPoly::rand_poly(&mut rng);
-        let b1 = CsPoly::rand_poly(&mut rng);
-        let a_ntt: Vec<CsNTTPoly> = vec![(&a0).into(), (&a1).into()];
-        let b_ntt: Vec<CsNTTPoly> = vec![(&b0).into(), (&b1).into()];
-        let dot = pointwise_dot(&a_ntt, &b_ntt);
-        let expected = a_ntt[0] * b_ntt[0] + a_ntt[1] * b_ntt[1];
-        for (x, y) in dot.coeffs.iter().zip(expected.coeffs.iter()) {
-            assert_eq!(lift(*x, CS_MODULUS), lift(*y, CS_MODULUS));
+    fn test_dot_matches_schoolbook_sum() {
+        let mut rng = ChaCha20Rng::from_seed([2u8; 32]);
+        // Full-range operands at κ=5 — the worst-case protocol bound.
+        let k = 5;
+        let av: Vec<CsPoly> = (0..k).map(|_| CsPoly::rand_poly(&mut rng)).collect();
+        let bv: Vec<CsPoly> = (0..k).map(|_| CsPoly::rand_poly(&mut rng)).collect();
+        let a_ntt: Vec<CsNTTPoly> = av.iter().map(CsNTTPoly::from).collect();
+        let b_ntt: Vec<CsNTTPoly> = bv.iter().map(CsNTTPoly::from).collect();
+        let got: CsPoly = (&pointwise_dot(&a_ntt, &b_ntt)).into();
+        let mut want = CsPoly::default();
+        for (a, b) in av.iter().zip(bv.iter()) {
+            want += CsPoly::schoolbook(a, b);
         }
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn test_small_norm_mul() {
+        // BDLOP-shaped product: uniform a × small-norm r.
+        let mut rng = ChaCha20Rng::from_seed([3u8; 32]);
+        let a = CsPoly::rand_poly(&mut rng);
+        let r = CsPoly::rand_mod_p(&mut rng, 116);
+        let c: CsPoly = (&(CsNTTPoly::from(&a) * CsNTTPoly::from(&r))).into();
+        assert_eq!(c, CsPoly::schoolbook(&a, &r));
+    }
+
+    #[test]
+    fn test_ntt_domain_linearity() {
+        let mut rng = ChaCha20Rng::from_seed([4u8; 32]);
+        let a = CsPoly::rand_poly(&mut rng);
+        let b = CsPoly::rand_poly(&mut rng);
+        let sum_ntt = CsNTTPoly::from(&a) + CsNTTPoly::from(&b);
+        let sum: CsPoly = (&sum_ntt).into();
+        assert_eq!(sum, a + b);
     }
 }

@@ -3,6 +3,7 @@ mod derive;
 mod hots;
 mod hvc;
 mod kahe;
+pub(crate) mod ntt64;
 mod ter_poly;
 
 use std::{
