@@ -1,5 +1,6 @@
 mod cs;
 mod derive;
+mod digest;
 mod hots;
 mod hvc;
 mod kahe;
@@ -18,6 +19,7 @@ pub use hvc::HVCNTTPoly;
 pub use hvc::HVCPoly;
 pub use cs::{pointwise_dot as pointwise_dot_cs, CsNTTPoly, CsPoly};
 pub use kahe::{pointwise_dot as pointwise_dot_kahe, KaheNTTPoly, KahePoly};
+pub use digest::{pointwise_dot as pointwise_dot_dgt, DgtNTTPoly, DGT_MODULUS};
 use rand::Rng;
 pub use ter_poly::TerPolyCoeffEncoding;
 
