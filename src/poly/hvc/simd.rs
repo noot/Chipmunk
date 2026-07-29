@@ -1,6 +1,7 @@
 //! SIMD pointwise modmul-accumulate over length-`N` `i32` vectors mod
-//! `HVC_MODULUS`, plus an i16 AVX2 NTT (`ntt_avx2_i16`) viable since
-//! q=25601 < 2^15 so butterfly sums stay within i16. See `SIMD_PLAN.md`.
+//! `HVC_MODULUS`, plus an i16 AVX2 NTT (`ntt_avx2_i16`) usable whenever
+//! q < 2^15 so butterfly sums stay within i16 — true at N=512 and N=1024,
+//! not at N=2048 (q = 40961). See `SIMD_PLAN.md`.
 //!
 //! Input coefficients may be any `i32`. Output coefficients are canonical in
 //! `[0, HVC_MODULUS)`. The accumulator must be zeroed by the caller; the
@@ -11,7 +12,7 @@ use crate::{HVCNTTPoly, HVC_MODULUS, N};
 use std::sync::OnceLock;
 
 const Q: i64 = HVC_MODULUS as i64;
-// Barrett constants: q = 202_753 fits in 18 bits; (q-1)^2 < 2^36.
+// Barrett constants: every HVC q fits in 16 bits, so (q-1)^2 < 2^32 < 2^36.
 // m = floor(2^36 / q) so that for x in [0, 2^36), floor(x/q) ∈ {t, t+1}
 // where t = (x * m) >> 36.
 const BARRETT_K: i32 = 36;

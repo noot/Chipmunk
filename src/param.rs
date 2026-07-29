@@ -121,11 +121,13 @@ pub const PHI_ALPHA_H: u32 = 481;
 pub const PHI_ALPHA_H_SAMPLE_THRESHOLD: u32 = 4294966518;
 
 // =================HVC PARAM==================
-/// q for small ring. Sized < 2^15 so that AVX2 i16 NTT works with eager
-/// per-butterfly center-reduce: `u + v_red ∈ [-q, q] ⊂ [-32767, 32767]`.
-/// Prime, ≡ 1 mod 2N. Per-N: 512=>25601, 1024=>18433, 2048=>12289 (the prior
-/// values lose a 2N-th root of unity as N grows; q shrinks accordingly, which
-/// lowers the per-coefficient plaintext/client budget — see q/2 below).
+/// q for small ring. Prime, ≡ 1 mod 2N; a given q loses its 2N-th root of
+/// unity as N grows, hence a distinct value per N.
+///
+/// The AVX2 i16 NTT needs `q < 2^15` so its eager per-butterfly center-reduce
+/// stays in range (`u + v_red ∈ [-q, q] ⊂ [-32767, 32767]`). That holds at
+/// N=512 and N=1024; at N=2048 q = 40961 exceeds it, so the dispatcher in
+/// `hvc_ntt` falls back to the i32 Barrett kernel.
 pub const HVC_MODULUS: i32 = sel_i32(25601, 18433, 40961);
 /// 1/N mod q
 pub const HVC_ONE_OVER_N: i32 = sel_i32(25551, 18415, 40941);

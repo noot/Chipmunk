@@ -1,5 +1,6 @@
-//! Shared 64-bit negacyclic NTT core, used by the KAHE ring (q ≈ 2^49.3) and
-//! the CS auxiliary convolution ring (p ≈ 2^58). Works on `[u64; N]` buffers
+//! Shared 64-bit negacyclic NTT core, used by the KAHE ring (q ≈ 2^48.3), the
+//! CS auxiliary convolution ring (p ≈ 2^58) and the digest ring (q ≈ 2^61).
+//! Works on `[u64; N]` buffers
 //! with values canonical in `[0, q)`.
 //!
 //! Butterflies use Shoup multiplication: for a precomputed twiddle `w` with

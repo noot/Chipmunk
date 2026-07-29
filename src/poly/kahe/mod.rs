@@ -1,4 +1,4 @@
-//! KAHE ring: a 64-bit ring with q = KAHE_MODULUS ≈ 2^49.3. Coefficients are
+//! KAHE ring: a 64-bit ring with q = KAHE_MODULUS ≈ 2^48.3. Coefficients are
 //! i64 centered representatives; the NTT domain (`KaheNTTPoly`) holds u64
 //! canonical values in `[0, q)`.
 
