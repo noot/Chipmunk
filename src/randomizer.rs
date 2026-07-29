@@ -21,18 +21,6 @@ impl Randomizers {
         }
     }
 
-    pub(crate) fn one(n: usize) -> Self {
-        let poly = (0..n)
-            .map(|_| {
-                let mut t = HVCPoly::default();
-                t.coeffs[0] = 1;
-                (&t).into()
-            })
-            .collect();
-
-        Self { poly }
-    }
-
     pub fn from_pks(roots: &[HVCPoly]) -> Self {
         // hash the roots into randomizers
         let mut input = Vec::new();

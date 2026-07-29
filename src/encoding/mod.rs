@@ -1,8 +1,7 @@
-use std::io::{Read, Write};
+use std::io::Write;
 
 use crate::{
-    normalize, HVCPoly, Polynomial, ENCODING_NORM_BOUND, HVC_MODULUS, HVC_WIDTH, N,
-    TWO_ZETA_PLUS_ONE, ZETA,
+    HVCPoly, Polynomial, ENCODING_NORM_BOUND, HVC_MODULUS, HVC_WIDTH, N, TWO_ZETA_PLUS_ONE,
 };
 
 // TODO: alpha 1/2/3 has structures. we may use a better algorithm to compress them.
@@ -41,11 +40,6 @@ impl EncodedPoly {
         //     .coeffs
         //     .iter()
         //     .for_each(|coeff| writer.write_all(coeff.to_be_bytes().as_ref()).unwrap());
-    }
-
-    pub(crate) fn deserialize<R: Read>(mut _reader: R) -> Self {
-        let mut _res = Self::default();
-        _res
     }
 
     pub(crate) fn encode(polys: &[HVCPoly]) -> EncodedPoly {

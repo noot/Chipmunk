@@ -134,10 +134,6 @@ impl std::ops::Mul for KaheNTTPoly {
 }
 
 impl KaheNTTPoly {
-    pub(crate) fn is_invertible(&self) -> bool {
-        self.coeffs.iter().all(|&e| e != 0)
-    }
-
     /// Sample a uniformly random polynomial directly in NTT representation.
     /// Valid because the NTT is a bijection over Z_q^N, so uniform slots give
     /// a uniform ring element.
