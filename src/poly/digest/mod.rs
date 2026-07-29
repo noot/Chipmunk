@@ -50,13 +50,13 @@ const Q: u64 = tables::MODULUS;
 /// A digest-ring element in the NTT domain, canonical in `[0, q)`.
 #[derive(Debug, Clone, Copy)]
 pub struct DgtNTTPoly {
-    coeffs: [u64; N as usize],
+    coeffs: [u64; N],
 }
 
 impl Default for DgtNTTPoly {
     fn default() -> Self {
         Self {
-            coeffs: [0u64; N as usize],
+            coeffs: [0u64; N],
         }
     }
 }
@@ -218,12 +218,12 @@ mod test {
             acc += DgtNTTPoly::from_kahe(p);
         }
         let got = acc.to_centered_coeffs();
-        for i in 0..N {
+        for (i, &g) in got.iter().enumerate() {
             let want: i64 = ps
                 .iter()
                 .map(|p| normalize64(p.coeffs()[i], KAHE_MODULUS))
                 .sum();
-            assert_eq!(got[i], want, "coeff {i} (|want| = {})", want.abs());
+            assert_eq!(g, want, "coeff {i} (|want| = {})", want.abs());
         }
     }
 
@@ -257,7 +257,7 @@ mod test {
         let base: Vec<KahePoly> = (0..3).map(|_| KahePoly::rand_poly(&mut rng)).collect();
         let bn: Vec<DgtNTTPoly> = base.iter().map(DgtNTTPoly::from_kahe).collect();
         let mut bumped = base.clone();
-        bumped[1] = bumped[1] + kahe_from(&[(7, 1)]);
+        bumped[1] += kahe_from(&[(7, 1)]);
         let cn: Vec<DgtNTTPoly> = bumped.iter().map(DgtNTTPoly::from_kahe).collect();
         assert_ne!(pointwise_dot(&a, &bn), pointwise_dot(&a, &cn));
     }

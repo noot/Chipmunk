@@ -7,7 +7,7 @@ macro_rules! impl_poly {
                     .iter()
                     .zip(rhs.coeffs.iter())
                     .map(|(&x, &y)| {
-                        crate::poly::lift(x, $modulus) == crate::poly::lift(y, $modulus)
+                        $crate::poly::lift(x, $modulus) == $crate::poly::lift(y, $modulus)
                     })
                     .fold(true, |acc, x| acc & x)
             }
@@ -83,7 +83,7 @@ macro_rules! impl_poly {
 #[macro_export]
 macro_rules! impl_signed_poly {
     ($poly:ident, $modulus:ident, $dim:ident) => {
-        crate::impl_poly!($poly, $modulus, $dim);
+        $crate::impl_poly!($poly, $modulus, $dim);
 
         impl From<&$poly> for TerPolyCoeffEncoding {
             fn from(poly: &$poly) -> Self {
@@ -178,7 +178,7 @@ macro_rules! impl_ntt_poly {
         fn ntt(p: &mut [i32; $dim]) {
             let q = $modulus as i64;
             let mut t = $dim;
-            for l in 0..crate::LOG_N {
+            for l in 0..$crate::LOG_N {
                 let m = 1 << l;
                 let ht = t >> 1;
                 let mut i = 0;
@@ -234,6 +234,7 @@ macro_rules! impl_ntt_poly {
             }
         }
         impl $ntt_poly {
+            #[allow(dead_code)]
             pub(crate) fn is_invertible(&self) -> bool {
                 for e in self.coeffs.iter() {
                     if *e == 0 {
@@ -252,7 +253,7 @@ macro_rules! impl_ntt_poly {
             /// and uniform input gives uniform output.
             pub fn rand_ntt_poly<R: rand::Rng>(rng: &mut R) -> Self {
                 let mut res = Self::default();
-                let threshold = <$poly as crate::poly::Polynomial>::SAMPLE_THRESHOLD;
+                let threshold = <$poly as $crate::poly::Polynomial>::SAMPLE_THRESHOLD;
                 let modulus = $modulus as u32;
                 for e in res.coeffs.iter_mut() {
                     let mut tmp = rng.next_u32();
@@ -270,7 +271,7 @@ macro_rules! impl_ntt_poly {
 #[macro_export]
 macro_rules! impl_signed_poly_functions {
     ($poly:ident, $ntt_poly:ident, $modulus:ident, $dim:ident, $modulus_over_2:ident, $sample_threshold:ident) => {
-        use crate::ALPHA_H;
+        use $crate::ALPHA_H;
         use rand::SeedableRng;
 
         impl Polynomial for $poly {
@@ -296,7 +297,7 @@ macro_rules! impl_signed_poly_functions {
                 }
                 for i in 0..$dim {
                     let d = (buf[i] - buf[i + $dim as usize]) % q;
-                    c[i] = crate::poly::lift(d as i32, $modulus) as i32;
+                    c[i] = $crate::poly::lift(d as i32, $modulus) as i32;
                 }
                 Self { coeffs: c }
             }
@@ -346,9 +347,9 @@ macro_rules! impl_signed_poly_functions {
 
                 while ct < half_weight {
                     let index = (tmp & ($dim as u32 - 1)) as usize;
-                    tmp >>= crate::LOG_N;
+                    tmp >>= $crate::LOG_N;
                     rng_ct += 1;
-                    if rng_ct == 32 / crate::LOG_N {
+                    if rng_ct == 32 / $crate::LOG_N {
                         tmp = rng.next_u32();
                         rng_ct = 0;
                     }
@@ -360,9 +361,9 @@ macro_rules! impl_signed_poly_functions {
                 ct = 0;
                 while ct < half_weight {
                     let index = (tmp & ($dim as u32 - 1)) as usize;
-                    tmp >>= crate::LOG_N;
+                    tmp >>= $crate::LOG_N;
                     rng_ct += 1;
-                    if rng_ct == 32 / crate::LOG_N {
+                    if rng_ct == 32 / $crate::LOG_N {
                         tmp = rng.next_u32();
                         rng_ct = 0;
                     }
@@ -398,7 +399,7 @@ macro_rules! impl_signed_poly_functions {
                     let tmp = rng.next_u32() as usize;
                     if res.coeffs[(tmp % $dim) as usize] == 0 {
                         ct += 1;
-                        if (tmp >> crate::LOG_N) & 1 == 1 {
+                        if (tmp >> $crate::LOG_N) & 1 == 1 {
                             res.coeffs[(tmp % $dim) as usize] = 1;
                         } else {
                             res.coeffs[(tmp % $dim) as usize] = -1;

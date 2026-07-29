@@ -29,13 +29,13 @@ const P: u64 = tables::MODULUS;
 #[derive(Debug, Clone, Copy)]
 // CS polynomials in the auxiliary-prime NTT encoding, canonical in [0, p).
 pub struct CsNTTPoly {
-    pub(crate) coeffs: [u64; N as usize],
+    pub(crate) coeffs: [u64; N],
 }
 
 impl Default for CsNTTPoly {
     fn default() -> Self {
         Self {
-            coeffs: [0u64; N as usize],
+            coeffs: [0u64; N],
         }
     }
 }

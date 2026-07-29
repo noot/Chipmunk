@@ -12,7 +12,7 @@ macro_rules! impl_poly_tests {
                 poly2
                     .coeffs
                     .iter_mut()
-                    .for_each(|x| *x = *x + ((rng.next_u32() % 100) * $modulus as u32) as i32);
+                    .for_each(|x| *x += ((rng.next_u32() % 100) * $modulus as u32) as i32);
                 poly2.lift();
                 for (e, f) in poly.coeffs.iter().zip(poly2.coeffs.iter()) {
                     assert_eq!(e, f)

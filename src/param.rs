@@ -55,6 +55,7 @@ pub(crate) const fn pick_slice_i32(
         _ => panic!("unsupported N: set N to 512, 1024, or 2048"),
     }
 }
+#[cfg(feature = "fast-ntt")]
 pub(crate) const fn pick_slice_i16(
     a: &'static [i16],
     b: &'static [i16],

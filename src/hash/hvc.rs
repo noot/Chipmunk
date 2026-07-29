@@ -52,7 +52,7 @@ impl HVCHash {
         {
             let mut tmp1 = 0;
             let mut tmp2 = 0;
-            let xgcd = xgcd(*f, HVC_MODULUS as i32, &mut tmp1, &mut tmp2);
+            let xgcd = xgcd(*f, HVC_MODULUS, &mut tmp1, &mut tmp2);
             assert!(xgcd == 1 || xgcd == -1);
             *e = tmp1 * xgcd;
         }
@@ -72,13 +72,10 @@ impl HVCHash {
         let mut inputs = inputs.to_vec();
         inputs.iter_mut().for_each(|x| x.lift());
 
-        let inputs_ntt: Vec<HVCNTTPoly> =
-            inputs.iter().map(|p| HVCNTTPoly::from(p)).collect();
+        let inputs_ntt: Vec<HVCNTTPoly> = inputs.iter().map(HVCNTTPoly::from).collect();
 
-        let a_refs: Vec<&[i32; crate::N]> =
-            self.param_h.iter().map(|p| &p.coeffs).collect();
-        let b_refs: Vec<&[i32; crate::N]> =
-            inputs_ntt.iter().map(|p| &p.coeffs).collect();
+        let a_refs: Vec<&[i32; crate::N]> = self.param_h.iter().map(|p| &p.coeffs).collect();
+        let b_refs: Vec<&[i32; crate::N]> = inputs_ntt.iter().map(|p| &p.coeffs).collect();
 
         pointwise_mac(&mut res.coeffs, &a_refs, &b_refs);
 
@@ -101,6 +98,7 @@ impl HVCHash {
     /// - the left inputs to the hash
     /// - the right inputs to the hash, except the last one
     /// - the final output
+    ///
     /// output
     /// - the missing right input
     pub(crate) fn derive_missing_input(
@@ -146,7 +144,7 @@ mod test {
         let hasher = HVCHash::init(&mut rng);
 
         let inputs: Vec<HVCPoly> = (0..HVC_WIDTH << 1)
-            .map(|_| HVCPoly::rand_poly(&mut rng).into())
+            .map(|_| HVCPoly::rand_poly(&mut rng))
             .collect();
         let output = hasher.hash(&inputs);
         let left = inputs[0..HVC_WIDTH].to_vec();
@@ -180,7 +178,7 @@ mod test {
                     .map(|(&x, &y)| x + y)
                     .collect();
                 let poly_rec = HVCPoly::projection_r(&decomposed);
-                let poly = poly1 * r1.into() + poly2 * r2.into();
+                let poly = poly1 * r1 + poly2 * r2;
                 assert_eq!(poly, poly_rec);
             }
             // hash is homomorphic
@@ -204,7 +202,7 @@ mod test {
 
                 let poly1 = hasher.decom_then_hash(&poly11, &poly12);
                 let poly2 = hasher.decom_then_hash(&poly21, &poly22);
-                let poly = poly1 * r1.into() + poly2 * r2.into();
+                let poly = poly1 * r1 + poly2 * r2;
 
                 let polyx1_randomized: Vec<HVCPoly> = poly11_randomized
                     .iter()

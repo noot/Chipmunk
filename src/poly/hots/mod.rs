@@ -18,7 +18,7 @@ pub use hots_ntt::HOTSNTTPoly;
 #[derive(Debug, Clone, Copy)]
 // HVC polynomials in canonical encoding
 pub struct HOTSPoly {
-    pub(crate) coeffs: [i32; N as usize],
+    pub(crate) coeffs: [i32; N],
 }
 
 impl_signed_poly!(HOTSPoly, HOTS_MODULUS, N);
@@ -33,14 +33,14 @@ impl_signed_poly_functions!(
 
 impl From<&HVCPoly> for HOTSPoly {
     fn from(p: &HVCPoly) -> Self {
-        let mut coeffs = p.coeffs.clone();
+        let mut coeffs = p.coeffs;
         for x in coeffs.iter_mut() {
-            *x = *x % HVC_MODULUS as i32;
+            *x %= HVC_MODULUS;
             if *x > HVC_MODULUS_OVER_TWO {
-                *x -= HVC_MODULUS as i32
+                *x -= HVC_MODULUS
             }
             if *x < -HVC_MODULUS_OVER_TWO {
-                *x += HVC_MODULUS as i32
+                *x += HVC_MODULUS
             }
         }
 
@@ -61,9 +61,9 @@ impl HOTSPoly {
     /// decompose a mod q polynomial into binary polynomials
     pub fn decompose_zz(&self) -> [HVCPoly; HOTS_WIDTH] {
         let mut res = [HVCPoly::default(); HOTS_WIDTH];
-        let mut tmp = self.coeffs.clone();
+        let mut tmp = self.coeffs;
         for poly in res.iter_mut() {
-            for (tar_coeff, cur_coeff) in (*poly).coeffs.iter_mut().zip(tmp.iter_mut()) {
+            for (tar_coeff, cur_coeff) in poly.coeffs.iter_mut().zip(tmp.iter_mut()) {
                 *tar_coeff = *cur_coeff % TWO_ZETA_PLUS_ONE as i32;
                 (*cur_coeff) /= TWO_ZETA_PLUS_ONE as i32;
             }
@@ -95,7 +95,7 @@ impl HOTSPoly {
             .map(|&x| normalize(x, HOTS_MODULUS))
             .collect();
         for poly in res.iter_mut() {
-            for (tar_coeff, cur_coeff) in (*poly).coeffs.iter_mut().zip(base_coeffs.iter_mut()) {
+            for (tar_coeff, cur_coeff) in poly.coeffs.iter_mut().zip(base_coeffs.iter_mut()) {
                 *tar_coeff = *cur_coeff % TWO_ZETA_PLUS_ONE as i32;
                 (*cur_coeff) /= TWO_ZETA_PLUS_ONE as i32;
             }
@@ -120,7 +120,7 @@ impl HOTSPoly {
 
     /// sample a random polynomial with coefficients between [-phi * alpha_H, phi * alpha_H]
     pub fn rand_mod_phi_alpha<R: Rng>(rng: &mut R) -> Self {
-        Self::rand_mod_p(rng, PHI_ALPHA_H as u32)
+        Self::rand_mod_p(rng, PHI_ALPHA_H)
     }
 
     // multiply a ternary with a binary poly

@@ -83,7 +83,7 @@ impl<H: LinearHash> Path<H> {
             })
             .collect::<Vec<_>>()
             .iter()
-            .fold(true, |acc, mk| acc && *mk);
+            .all(|mk| *mk);
 
         end_timer!(timer);
         checks

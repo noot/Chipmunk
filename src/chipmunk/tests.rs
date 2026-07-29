@@ -15,7 +15,7 @@ fn test_chipmunk() {
         rng.fill_bytes(&mut seed);
         let (pk, sk) = Chipmunk::key_gen(&seed, &pp);
         for _ in 0..10 {
-            let index = rng.next_u32() % (1 << HEIGHT - 1);
+            let index = rng.next_u32() % (1 << (HEIGHT - 1));
             let sig = Chipmunk::sign(&sk, index as usize, message.as_ref(), &pp);
             assert!(Chipmunk::verify(&pk, message.as_ref(), &sig, &pp))
         }

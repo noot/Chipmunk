@@ -64,6 +64,7 @@ impl HOTSHash {
         (&res).into()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn decom_then_hash(&self, left: &HOTSPoly, right: &HOTSPoly) -> HVCPoly {
         self.hash_separate_inputs(&left.decompose_r(), &right.decompose_r())
     }

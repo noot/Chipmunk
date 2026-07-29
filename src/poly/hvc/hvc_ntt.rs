@@ -6,7 +6,7 @@ use crate::{HVC_MODULUS, N};
 #[derive(Debug, Clone, Copy)]
 // HVC polynomials in NTT encoding
 pub struct HVCNTTPoly {
-    pub(crate) coeffs: [i32; N as usize],
+    pub(crate) coeffs: [i32; N],
 }
 
 impl_poly!(HVCNTTPoly, HVC_MODULUS, N);
@@ -62,7 +62,7 @@ pub(super) fn canon(x: i32) -> i32 {
 /// Scalar butterfly stages of the forward NTT, starting at stage `start_l`
 /// with `t = 1 << (9 - start_l)`. Inputs must already be in `[0, q)`.
 #[cfg(feature = "fast-ntt")]
-pub(super) fn ntt_stages_scalar(p: &mut [i32; N as usize], start_l: usize, mut t: usize) {
+pub(super) fn ntt_stages_scalar(p: &mut [i32; N], start_l: usize, mut t: usize) {
     for l in start_l..crate::LOG_N {
         let m = 1usize << l;
         let ht = t >> 1;
@@ -91,7 +91,7 @@ pub(super) fn ntt_stages_scalar(p: &mut [i32; N as usize], start_l: usize, mut t
 /// Returns updated `(t, m)` for resumption.
 #[cfg(feature = "fast-ntt")]
 pub(super) fn inv_ntt_stages_scalar(
-    p: &mut [i32; N as usize],
+    p: &mut [i32; N],
     iters: usize,
     mut t: usize,
     mut m: usize,
@@ -126,7 +126,7 @@ pub(super) fn inv_ntt_stages_scalar(
 }
 
 #[cfg(feature = "fast-ntt")]
-pub(super) fn inv_ntt_final_scale(p: &mut [i32; N as usize]) {
+pub(super) fn inv_ntt_final_scale(p: &mut [i32; N]) {
     let inv_n = canon(HVC_ONE_OVER_N);
     for e in p.iter_mut() {
         *e = barrett((*e as i64) * (inv_n as i64));
@@ -134,24 +134,24 @@ pub(super) fn inv_ntt_final_scale(p: &mut [i32; N as usize]) {
 }
 
 #[cfg(feature = "fast-ntt")]
-pub(super) fn ntt_scalar(p: &mut [i32; N as usize]) {
+pub(super) fn ntt_scalar(p: &mut [i32; N]) {
     for e in p.iter_mut() {
         *e = canon(*e);
     }
-    ntt_stages_scalar(p, 0, N as usize);
+    ntt_stages_scalar(p, 0, N);
 }
 
 #[cfg(feature = "fast-ntt")]
-pub(super) fn inv_ntt_scalar(p: &mut [i32; N as usize]) {
+pub(super) fn inv_ntt_scalar(p: &mut [i32; N]) {
     for e in p.iter_mut() {
         *e = canon(*e);
     }
-    inv_ntt_stages_scalar(p, crate::LOG_N, 1, N as usize);
+    inv_ntt_stages_scalar(p, crate::LOG_N, 1, N);
     inv_ntt_final_scale(p);
 }
 
 #[cfg(feature = "fast-ntt")]
-type NttFn = fn(&mut [i32; N as usize]);
+type NttFn = fn(&mut [i32; N]);
 
 #[cfg(feature = "fast-ntt")]
 static NTT_DISPATCH: std::sync::OnceLock<NttFn> = std::sync::OnceLock::new();
@@ -195,12 +195,12 @@ fn select_inv_ntt() -> NttFn {
 }
 
 #[cfg(feature = "fast-ntt")]
-fn ntt(p: &mut [i32; N as usize]) {
+fn ntt(p: &mut [i32; N]) {
     (NTT_DISPATCH.get_or_init(select_ntt))(p)
 }
 
 #[cfg(feature = "fast-ntt")]
-fn inv_ntt(p: &mut [i32; N as usize]) {
+fn inv_ntt(p: &mut [i32; N]) {
     (INV_NTT_DISPATCH.get_or_init(select_inv_ntt))(p)
 }
 

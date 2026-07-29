@@ -7,7 +7,7 @@ use super::ntt_param::{INV_NTT_TABLE, NTT_TABLE};
 #[derive(Debug, Clone, Copy)]
 // HVC polynomials in NTT encoding
 pub struct HOTSNTTPoly {
-    pub(crate) coeffs: [i32; N as usize],
+    pub(crate) coeffs: [i32; N],
 }
 
 impl_poly!(HOTSNTTPoly, HOTS_MODULUS, N);
@@ -61,11 +61,11 @@ fn canon(x: i32) -> i32 {
 }
 
 #[cfg(feature = "fast-ntt")]
-fn ntt(p: &mut [i32; N as usize]) {
+fn ntt(p: &mut [i32; N]) {
     for e in p.iter_mut() {
         *e = canon(*e);
     }
-    let mut t = N as usize;
+    let mut t = N;
     for l in 0..crate::LOG_N {
         let m = 1usize << l;
         let ht = t >> 1;
@@ -90,12 +90,12 @@ fn ntt(p: &mut [i32; N as usize]) {
 }
 
 #[cfg(feature = "fast-ntt")]
-fn inv_ntt(p: &mut [i32; N as usize]) {
+fn inv_ntt(p: &mut [i32; N]) {
     for e in p.iter_mut() {
         *e = canon(*e);
     }
     let mut t = 1usize;
-    let mut m = N as usize;
+    let mut m = N;
     while m > 1 {
         let hm = m >> 1;
         let dt = t << 1;

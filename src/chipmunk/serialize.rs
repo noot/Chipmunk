@@ -24,10 +24,11 @@ impl ChipmunkSignature {
 
     pub(crate) fn deserialize<R: Read>(mut reader: R, skip_last_poly: bool) -> Self {
         let timer = start_timer!(|| "Chipmunk deserialization");
-        let mut res = Self::default();
-        res.path = RandomizedPath::deserialize(&mut reader, skip_last_poly);
-        res.hots_pk = RandomizedHOTSPK::deserialize(&mut reader);
-        res.hots_sig = HotsSig::deserialize(&mut reader);
+        let res = Self {
+            path: RandomizedPath::deserialize(&mut reader, skip_last_poly),
+            hots_pk: RandomizedHOTSPK::deserialize(&mut reader),
+            hots_sig: HotsSig::deserialize(&mut reader),
+        };
 
         end_timer!(timer);
         res

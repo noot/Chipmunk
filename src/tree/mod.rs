@@ -148,7 +148,7 @@ where
 
         // path.len() = `tree height - 1`, the missing elements being the root
         let mut nodes = Vec::with_capacity(self.height - 1);
-        if index % 2 == 0 {
+        if index.is_multiple_of(2) {
             nodes.push((self.leaf_nodes[index], self.leaf_nodes[index + 1]))
         } else {
             nodes.push((self.leaf_nodes[index - 1], self.leaf_nodes[index]))

@@ -18,13 +18,13 @@ pub(crate) const KAHE_RING64: Ring64 = Ring64 {
 #[derive(Debug, Clone, Copy)]
 // KAHE polynomials in NTT encoding, coefficients canonical in [0, q).
 pub struct KaheNTTPoly {
-    pub(crate) coeffs: [u64; N as usize],
+    pub(crate) coeffs: [u64; N],
 }
 
 impl Default for KaheNTTPoly {
     fn default() -> Self {
         Self {
-            coeffs: [0u64; N as usize],
+            coeffs: [0u64; N],
         }
     }
 }

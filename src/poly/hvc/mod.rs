@@ -12,6 +12,7 @@ use sha2::Digest;
 use sha2::Sha256;
 use std::ops::Mul;
 
+#[cfg(feature = "fast-ntt")]
 mod hvc_mont_i16_param;
 mod hvc_ntt;
 mod hvc_ntt_param;
@@ -23,7 +24,7 @@ pub use simd::{pointwise_dot, pointwise_mac, pointwise_sum, pointwise_sum_polys}
 #[derive(Debug, Clone, Copy)]
 // HVC polynomials in canonical encoding
 pub struct HVCPoly {
-    pub(crate) coeffs: [i32; N as usize],
+    pub(crate) coeffs: [i32; N],
 }
 
 impl_signed_poly!(HVCPoly, HVC_MODULUS, N);
@@ -65,9 +66,9 @@ impl HVCPoly {
     /// decompose a polynomial into binary polynomials
     pub fn decompose_zz(&self) -> [HVCPoly; HVC_WIDTH] {
         let mut res = [HVCPoly::default(); HVC_WIDTH];
-        let mut tmp = self.coeffs.clone();
+        let mut tmp = self.coeffs;
         for poly in res.iter_mut() {
-            for (tar_coeff, cur_coeff) in (*poly).coeffs.iter_mut().zip(tmp.iter_mut()) {
+            for (tar_coeff, cur_coeff) in poly.coeffs.iter_mut().zip(tmp.iter_mut()) {
                 *tar_coeff = normalize(*cur_coeff, TWO_ZETA_PLUS_ONE as i32);
                 *cur_coeff = (*cur_coeff - *tar_coeff) / TWO_ZETA_PLUS_ONE as i32;
             }
@@ -96,7 +97,7 @@ impl HVCPoly {
             .map(|&x| normalize(x, HVC_MODULUS))
             .collect();
         for poly in res.iter_mut() {
-            for (tar_coeff, cur_coeff) in (*poly).coeffs.iter_mut().zip(base_coeffs.iter_mut()) {
+            for (tar_coeff, cur_coeff) in poly.coeffs.iter_mut().zip(base_coeffs.iter_mut()) {
                 *tar_coeff = normalize(*cur_coeff, TWO_ZETA_PLUS_ONE as i32);
                 *cur_coeff = (*cur_coeff - *tar_coeff) / TWO_ZETA_PLUS_ONE as i32;
             }

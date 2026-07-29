@@ -22,7 +22,7 @@ pub(crate) use cs_ntt::CS_AUX_RING64;
 #[derive(Debug, Clone, Copy)]
 // CS polynomials in canonical encoding (centered representatives).
 pub struct CsPoly {
-    pub(crate) coeffs: [i32; N as usize],
+    pub(crate) coeffs: [i32; N],
 }
 
 impl_signed_poly!(CsPoly, CS_MODULUS, N);
@@ -57,7 +57,7 @@ impl CsPoly {
         #[cfg(debug_assertions)]
         for &c in coeffs.iter() {
             debug_assert!(
-                c >= -CS_MODULUS_OVER_TWO && c <= CS_MODULUS_OVER_TWO,
+                (-CS_MODULUS_OVER_TWO..=CS_MODULUS_OVER_TWO).contains(&c),
                 "from_signed_coeffs: coefficient {c} outside [-q/2, q/2]"
             );
         }
@@ -85,10 +85,10 @@ impl CsPoly {
     pub fn decompose_r_to_hvc(&self) -> [HVCPoly; HVC_WIDTH] {
         let mut base: [i32; N] = core::array::from_fn(|i| normalize(self.coeffs[i], CS_MODULUS));
         let mut digits = [[0i32; N]; HVC_WIDTH];
-        for w in 0..HVC_WIDTH {
+        for digit in digits.iter_mut() {
             for i in 0..N {
                 let d = normalize(base[i], TWO_ZETA_PLUS_ONE as i32);
-                digits[w][i] = d;
+                digit[i] = d;
                 base[i] = (base[i] - d) / TWO_ZETA_PLUS_ONE as i32;
             }
         }
@@ -97,7 +97,7 @@ impl CsPoly {
 
     /// HVC→CS bridge: recompose `HVC_WIDTH` `HVCPoly` digits back to a CS-ring
     /// element, `Σ_j digit_j · (2ζ+1)^j (mod CS_MODULUS)`. Left-inverse of
-    /// [`decompose_r_to_hvc`] and **linear in the digits**, so pointwise-summed
+    /// [`Self::decompose_r_to_hvc`] and **linear in the digits**, so pointwise-summed
     /// opening digits project to the summed leaf value (preserves `sum_openings`).
     pub fn project_r_from_hvc(decomposed: &[HVCPoly]) -> Self {
         debug_assert_eq!(decomposed.len(), HVC_WIDTH);
@@ -127,7 +127,7 @@ mod test {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         for _ in 0..10 {
             let mut poly = CsPoly::rand_poly(&mut rng);
-            let mut poly2 = poly.clone();
+            let mut poly2 = poly;
 
             poly.lift();
             // Add a single random multiple of q ∈ {0, q}. Keeps values within

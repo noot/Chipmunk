@@ -107,11 +107,11 @@ impl RandomizedHOTSPK {
 
         #[cfg(feature = "parallel")]
         self.v0.par_iter_mut().for_each(|x| {
-            *x = HVCPoly::ter_mul_bin(&ternary_coeffs, x);
+            *x = HVCPoly::ter_mul_bin(ternary_coeffs, x);
         });
         #[cfg(feature = "parallel")]
         self.v1.par_iter_mut().for_each(|x| {
-            *x = HVCPoly::ter_mul_bin(&ternary_coeffs, x);
+            *x = HVCPoly::ter_mul_bin(ternary_coeffs, x);
         });
 
         self.is_randomized = true;
@@ -122,6 +122,7 @@ impl RandomizedHOTSPK {
     }
 
     /// Aggregate multiple PKs into a single PK
+    #[allow(dead_code)]
     pub(crate) fn aggregate(pks: &[Self], roots: &[HVCPoly]) -> Self {
         // get and apply the randomizers
         let randomizers = Randomizers::from_pks(roots);

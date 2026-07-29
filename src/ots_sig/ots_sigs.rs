@@ -44,7 +44,7 @@ impl HotsSig {
         res
     }
 
-    ///
+    /// Aggregate a set of signatures with randomizers
     pub(crate) fn aggregate_with_randomizers(sigs: &[Self], randomizers: &Randomizers) -> Self {
         #[cfg(feature = "parallel")]
         {

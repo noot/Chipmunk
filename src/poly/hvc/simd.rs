@@ -94,9 +94,9 @@ fn pointwise_sum_scalar(acc: &mut [i32; N], vs: &[&[i32; N]]) {
     // Final pass: normalize to `[-q/2, q/2)` so `infinity_norm` reports the
     // centered magnitude (matches scalar `HVCPoly::Add` representation).
     let half = HVC_MODULUS / 2;
-    for i in 0..N {
-        if acc[i] > half {
-            acc[i] -= HVC_MODULUS;
+    for a in acc.iter_mut() {
+        if *a > half {
+            *a -= HVC_MODULUS;
         }
     }
 }
@@ -988,9 +988,9 @@ mod test_i16_scalar {
         }
         inv_ntt_stages_scalar_i16(&mut buf, crate::LOG_N, 1, N);
         // Final scale by N_INV_MONT_I16
-        for i in 0..N {
-            let prod = (buf[i] as i32) * (N_INV_MONT_I16 as i32);
-            buf[i] = mont_reduce_i16_scalar(prod);
+        for b in buf.iter_mut() {
+            let prod = (*b as i32) * (N_INV_MONT_I16 as i32);
+            *b = mont_reduce_i16_scalar(prod);
         }
         for i in 0..N { p[i] = buf[i] as i32; }
     }

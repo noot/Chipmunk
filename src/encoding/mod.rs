@@ -8,7 +8,8 @@ use crate::{
 #[derive(Debug, Clone, Default)]
 pub struct EncodedPoly {
     // Hint is only used to check the correctness of the algorithm.
-    // It is not send to the verifier -- verifier can compute it locally. 
+    // It is not send to the verifier -- verifier can compute it locally.
+    #[allow(dead_code)]
     hint: HVCPoly,
     pub(crate) a_star: HVCPoly,
     pub(crate) alphas: Vec<HVCPoly>,
@@ -78,6 +79,8 @@ impl EncodedPoly {
         }
     }
 
+    /// Inverse of [`EncodedPoly::encode`]; kept as the correctness reference.
+    #[allow(dead_code)]
     pub(crate) fn decode(&self) -> [HVCPoly; HVC_WIDTH] {
         let h_double_prime = self
             .hint
@@ -146,6 +149,7 @@ fn extract_alphas(polys: &[HVCPoly], dec_eta_kappa: &[HVCPoly]) -> Vec<HVCPoly> 
 // given the alpha1/2/3
 // compute delta_v s.t.
 // delta_v = alpha1 b1 + alpha2 b2 + alpha3 b3
+#[allow(dead_code)]
 fn rebuild_delta_v(alphas: &[HVCPoly]) -> Vec<HVCPoly> {
     let len = alphas.len();
     let mut delta_vs = alphas.to_vec().clone();
@@ -230,16 +234,14 @@ mod tests {
 
         let mut encodeds = vec![];
         let encoding = start_timer!(|| format!("encode {} times", size));
-        for i in 0..size {
-            let encoded = EncodedPoly::encode(&decomposed_sums[i]);
-            encodeds.push(encoded);
+        for decomposed_sum in decomposed_sums.iter() {
+            encodeds.push(EncodedPoly::encode(decomposed_sum));
         }
         end_timer!(encoding);
 
         let encoding = start_timer!(|| format!("decode {} times", size));
-        for i in 0..size {
-            let decoded = encodeds[i].decode();
-            assert_eq!(decomposed_sums[i], decoded);
+        for (encoded, decomposed_sum) in encodeds.iter().zip(decomposed_sums.iter()) {
+            assert_eq!(*decomposed_sum, encoded.decode());
         }
         end_timer!(encoding);
     }

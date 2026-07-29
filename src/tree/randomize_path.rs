@@ -133,10 +133,10 @@ impl RandomizedPath {
         #[cfg(feature = "parallel")]
         self.nodes.par_iter_mut().for_each(|(left, right)| {
             left.par_iter_mut()
-                .for_each(|x| *x = HVCPoly::ter_mul_bin(&ternary_coeffs, x));
+                .for_each(|x| *x = HVCPoly::ter_mul_bin(ternary_coeffs, x));
             right
                 .par_iter_mut()
-                .for_each(|x| *x = HVCPoly::ter_mul_bin(&ternary_coeffs, x));
+                .for_each(|x| *x = HVCPoly::ter_mul_bin(ternary_coeffs, x));
         });
 
         self.is_randomized = true;
@@ -195,20 +195,22 @@ impl RandomizedPath {
         let position_list: Vec<_> = self.position_list().collect();
 
         // todo: parallelization?
-        for i in 1..self.nodes.len() {
-            if position_list[i] {
-                self.nodes[i].1[HVC_WIDTH - 1] = hasher.derive_missing_input(
-                    self.nodes[i].0.as_ref(),
-                    self.nodes[i].1.as_ref(),
-                    &HVCPoly::projection_r(&self.nodes[i - 1].1),
-                );
+        for (i, &pos) in position_list
+            .iter()
+            .enumerate()
+            .take(self.nodes.len())
+            .skip(1)
+        {
+            let parent = if pos {
+                HVCPoly::projection_r(&self.nodes[i - 1].1)
             } else {
-                self.nodes[i].1[HVC_WIDTH - 1] = hasher.derive_missing_input(
-                    self.nodes[i].0.as_ref(),
-                    self.nodes[i].1.as_ref(),
-                    &HVCPoly::projection_r(&self.nodes[i - 1].0),
-                );
-            }
+                HVCPoly::projection_r(&self.nodes[i - 1].0)
+            };
+            self.nodes[i].1[HVC_WIDTH - 1] = hasher.derive_missing_input(
+                self.nodes[i].0.as_ref(),
+                self.nodes[i].1.as_ref(),
+                &parent,
+            );
         }
         end_timer!(timer);
     }
@@ -257,7 +259,7 @@ impl RandomizedPath {
             })
             .collect::<Vec<_>>()
             .iter()
-            .fold(true, |acc, mk| acc && *mk);
+            .all(|mk| *mk);
         #[cfg(not(feature = "parallel"))]
         let checks = self
             .nodes

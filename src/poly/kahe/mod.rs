@@ -35,7 +35,7 @@ pub(crate) fn normalize64(a: i64, modulus: i64) -> i64 {
 #[derive(Debug, Clone, Copy)]
 // KAHE polynomials in canonical encoding (centered representatives).
 pub struct KahePoly {
-    pub(crate) coeffs: [i64; N as usize],
+    pub(crate) coeffs: [i64; N],
 }
 
 impl PartialEq for KahePoly {
@@ -50,7 +50,7 @@ impl PartialEq for KahePoly {
 impl Default for KahePoly {
     fn default() -> Self {
         Self {
-            coeffs: [0i64; N as usize],
+            coeffs: [0i64; N],
         }
     }
 }
@@ -127,7 +127,7 @@ impl KahePoly {
         #[cfg(debug_assertions)]
         for &c in coeffs.iter() {
             debug_assert!(
-                c >= -KAHE_MODULUS_OVER_TWO && c <= KAHE_MODULUS_OVER_TWO,
+                (-KAHE_MODULUS_OVER_TWO..=KAHE_MODULUS_OVER_TWO).contains(&c),
                 "from_signed_coeffs: coefficient {c} outside [-q/2, q/2]"
             );
         }
@@ -215,7 +215,7 @@ mod test {
         let mut rng = ChaCha20Rng::from_seed([0u8; 32]);
         for _ in 0..10 {
             let mut poly = KahePoly::rand_poly(&mut rng);
-            let mut poly2 = poly.clone();
+            let mut poly2 = poly;
 
             poly.lift();
             // Add a random multiple of q ∈ {0, q}; lift() must still recover
