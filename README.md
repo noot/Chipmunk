@@ -1,7 +1,7 @@
 Chipmunk: Better Synchronized Multi-Signatures from Lattices
 ------
 
-This is a reference implementation for the paper: [Chipmunk: Better Synchronized Multi-Signatures from Lattices](https://eprint.iacr.org/2023/1820).
+This is an implementation of lattice-based multisignatures, originally for the paper [Chipmunk: Better Synchronized Multi-Signatures from Lattices](https://eprint.iacr.org/2023/1820). This fork is reparametrized for [Panetiere](https://github.com/flashbots/panetiere), which uses the homomorphic vector commitment scheme and the polynomial ring math.
 
 # Citation
 

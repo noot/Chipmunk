@@ -1,16 +1,17 @@
 use ark_std::{end_timer, start_timer};
 #[cfg(feature = "parallel")]
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
+#[cfg(feature = "parallel")]
 use rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator};
 
 use crate::encoding::EncodedPoly;
 use crate::path::Path;
+use crate::ENCODING_NORM_BOUND;
 use crate::{
     poly::{HVCPoly, TerPolyCoeffEncoding},
     randomizer::Randomizers,
     HVCHash, HEIGHT, HVC_WIDTH,
 };
-use crate::{Polynomial, ENCODING_NORM_BOUND};
 use core::fmt;
 use std::fmt::Display;
 use std::io::{Read, Write};
@@ -133,10 +134,10 @@ impl RandomizedPath {
         #[cfg(feature = "parallel")]
         self.nodes.par_iter_mut().for_each(|(left, right)| {
             left.par_iter_mut()
-                .for_each(|x| *x = HVCPoly::ter_mul_bin(&ternary_coeffs, x));
+                .for_each(|x| *x = HVCPoly::ter_mul_bin(ternary_coeffs, x));
             right
                 .par_iter_mut()
-                .for_each(|x| *x = HVCPoly::ter_mul_bin(&ternary_coeffs, x));
+                .for_each(|x| *x = HVCPoly::ter_mul_bin(ternary_coeffs, x));
         });
 
         self.is_randomized = true;
@@ -145,9 +146,15 @@ impl RandomizedPath {
     pub(crate) fn aggregate_with_randomizers(paths: &[Self], randomizers: &Randomizers) -> Self {
         let timer = start_timer!(|| format!("aggregate {} paths", paths.len()));
         let mut randomized_paths: Vec<RandomizedPath> = paths.to_vec();
+        #[cfg(feature = "parallel")]
         randomized_paths
             .par_iter_mut()
             .zip(randomizers.poly.par_iter())
+            .for_each(|(path, randomizer)| path.randomize_with(randomizer));
+        #[cfg(not(feature = "parallel"))]
+        randomized_paths
+            .iter_mut()
+            .zip(&randomizers.poly)
             .for_each(|(path, randomizer)| path.randomize_with(randomizer));
 
         // aggregate the result
@@ -168,9 +175,16 @@ impl RandomizedPath {
         // recompute the root
         let randomziers = Randomizers::from_pks(roots);
 
+        #[cfg(feature = "parallel")]
         let tmp: Vec<_> = roots
             .par_iter()
             .zip(randomziers.poly.par_iter())
+            .map(|(&rt, rand)| HVCPoly::from(rand) * rt)
+            .collect();
+        #[cfg(not(feature = "parallel"))]
+        let tmp: Vec<_> = roots
+            .iter()
+            .zip(&randomziers.poly)
             .map(|(&rt, rand)| HVCPoly::from(rand) * rt)
             .collect();
         let root = tmp.iter().fold(HVCPoly::default(), |acc, mk| acc + *mk);
@@ -182,8 +196,13 @@ impl RandomizedPath {
         let position_list: Vec<_> = self.position_list().collect();
 
         // todo: parallelization?
-        for i in 1..self.nodes.len() {
-            if position_list[i] {
+        for (i, &is_right) in position_list
+            .iter()
+            .enumerate()
+            .take(self.nodes.len())
+            .skip(1)
+        {
+            if is_right {
                 self.nodes[i].1[HVC_WIDTH - 1] = hasher.derive_missing_input(
                     self.nodes[i].0.as_ref(),
                     self.nodes[i].1.as_ref(),
@@ -206,9 +225,16 @@ impl RandomizedPath {
         // recompute the root
         let randomziers = Randomizers::from_pks(roots);
 
+        #[cfg(feature = "parallel")]
         let tmp: Vec<_> = roots
             .par_iter()
             .zip(randomziers.poly.par_iter())
+            .map(|(&rt, rand)| HVCPoly::from(rand) * rt)
+            .collect();
+        #[cfg(not(feature = "parallel"))]
+        let tmp: Vec<_> = roots
+            .iter()
+            .zip(&randomziers.poly)
             .map(|(&rt, rand)| HVCPoly::from(rand) * rt)
             .collect();
         let root = tmp.iter().fold(HVCPoly::default(), |acc, mk| acc + *mk);
@@ -219,6 +245,7 @@ impl RandomizedPath {
         }
         let position_list: Vec<_> = self.position_list().collect();
 
+        #[cfg(feature = "parallel")]
         let checks = self
             .nodes
             .clone()
@@ -236,7 +263,22 @@ impl RandomizedPath {
             })
             .collect::<Vec<_>>()
             .iter()
-            .fold(true, |acc, mk| acc && *mk);
+            .all(|mk| *mk);
+        #[cfg(not(feature = "parallel"))]
+        let checks = self
+            .nodes
+            .iter()
+            .enumerate()
+            .skip(1)
+            .all(|(i, (left, right))| {
+                if position_list[i] {
+                    hasher.hash_separate_inputs(left, right)
+                        == HVCPoly::projection_r(&self.nodes[i - 1].1)
+                } else {
+                    hasher.hash_separate_inputs(left, right)
+                        == HVCPoly::projection_r(&self.nodes[i - 1].0)
+                }
+            });
 
         end_timer!(timer);
         checks

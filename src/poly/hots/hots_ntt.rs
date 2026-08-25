@@ -1,28 +1,124 @@
-use crate::normalize;
-use crate::{impl_ntt_poly, impl_poly, HOTS_ONE_OVER_N};
-use crate::{HOTSPoly, HOTS_MODULUS, N};
+use crate::{normalize, HOTSPoly, HOTS_MODULUS, N};
+use negacyclic_rings::ntt32::{self, Ring32};
+use negacyclic_rings::params::{find_psi32, generate_ring32};
+use std::fmt;
+use std::ops::{Add, AddAssign, Mul, Sub, SubAssign};
+use std::sync::OnceLock;
 
-use super::ntt_param::{INV_NTT_TABLE, NTT_TABLE};
-
-#[derive(Debug, Clone, Copy)]
-// HVC polynomials in NTT encoding
-pub struct HOTSNTTPoly {
-    pub(crate) coeffs: [i32; N as usize],
+fn ring() -> &'static Ring32<N> {
+    static RING: OnceLock<Ring32<N>> = OnceLock::new();
+    RING.get_or_init(|| {
+        let q = HOTS_MODULUS as u32;
+        generate_ring32(q, find_psi32::<N>(q))
+    })
 }
 
-impl_poly!(HOTSNTTPoly, HOTS_MODULUS, N);
-impl_ntt_poly!(HOTSPoly, HOTSNTTPoly, HOTS_MODULUS, N, HOTS_ONE_OVER_N);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HOTSNTTPoly {
+    pub(crate) coeffs: [u32; N],
+}
+
+impl Default for HOTSNTTPoly {
+    fn default() -> Self {
+        Self { coeffs: [0; N] }
+    }
+}
+
+impl fmt::Display for HOTSNTTPoly {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{:#16x} {:#16x} {:#16x} {:#16x}",
+            self.coeffs[0], self.coeffs[1], self.coeffs[2], self.coeffs[3]
+        )
+    }
+}
+
+impl From<&HOTSPoly> for HOTSNTTPoly {
+    fn from(poly: &HOTSPoly) -> Self {
+        let mut coeffs = poly.coeffs.map(|x| x.rem_euclid(HOTS_MODULUS) as u32);
+        ntt32::ntt(ring(), &mut coeffs);
+        Self { coeffs }
+    }
+}
+
+impl From<HOTSPoly> for HOTSNTTPoly {
+    fn from(poly: HOTSPoly) -> Self {
+        Self::from(&poly)
+    }
+}
+
+impl From<&HOTSNTTPoly> for HOTSPoly {
+    fn from(poly: &HOTSNTTPoly) -> Self {
+        let mut coeffs = poly.coeffs;
+        ntt32::inv_ntt(ring(), &mut coeffs);
+        HOTSPoly {
+            coeffs: coeffs.map(|x| normalize(x as i32, HOTS_MODULUS)),
+        }
+    }
+}
+
+impl From<HOTSNTTPoly> for HOTSPoly {
+    fn from(poly: HOTSNTTPoly) -> Self {
+        Self::from(&poly)
+    }
+}
+
+impl Add for HOTSNTTPoly {
+    type Output = Self;
+    fn add(mut self, other: Self) -> Self {
+        self += other;
+        self
+    }
+}
+
+impl AddAssign for HOTSNTTPoly {
+    fn add_assign(&mut self, other: Self) {
+        ntt32::add_assign(ring(), &mut self.coeffs, &other.coeffs);
+    }
+}
+
+impl Sub for HOTSNTTPoly {
+    type Output = Self;
+    fn sub(mut self, other: Self) -> Self {
+        self -= other;
+        self
+    }
+}
+
+impl SubAssign for HOTSNTTPoly {
+    fn sub_assign(&mut self, other: Self) {
+        ntt32::sub_assign(ring(), &mut self.coeffs, &other.coeffs);
+    }
+}
+
+impl Mul for HOTSNTTPoly {
+    type Output = Self;
+    fn mul(self, other: Self) -> Self {
+        Self {
+            coeffs: ntt32::pointwise_mul(ring(), &self.coeffs, &other.coeffs),
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use super::{inv_ntt, ntt};
-    use crate::impl_ntt_poly_tests;
     use crate::Polynomial;
-    use crate::{poly::lift, HOTSPoly, HOTS_MODULUS};
-    use ark_std::{end_timer, start_timer};
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
-    impl_ntt_poly_tests!(HOTSPoly, HOTSNTTPoly, HOTS_MODULUS);
+    #[test]
+    fn conversion_and_arithmetic() {
+        let mut rng = ChaCha20Rng::from_seed([0; 32]);
+        for _ in 0..10 {
+            let a = HOTSPoly::rand_poly(&mut rng);
+            let b = HOTSPoly::rand_poly(&mut rng);
+            let a_ntt = HOTSNTTPoly::from(a);
+            let b_ntt = HOTSNTTPoly::from(b);
+            assert_eq!(HOTSPoly::from(a_ntt), a);
+            assert_eq!(HOTSPoly::from(a_ntt + b_ntt), a + b);
+            assert_eq!(HOTSPoly::from(a_ntt * b_ntt), HOTSPoly::schoolbook(&a, &b));
+        }
+    }
 }

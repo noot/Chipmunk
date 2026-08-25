@@ -1,10 +1,7 @@
 use ark_std::{end_timer, start_timer};
 use rand::Rng;
 
-use crate::poly::Polynomial;
-use crate::{HOTSPoly, HVCNTTPoly, HVCPoly, HOTS_WIDTH};
-#[cfg(feature = "parallel")]
-use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use crate::{pointwise_dot, HOTSPoly, HVCNTTPoly, HVCPoly, HOTS_WIDTH};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct HOTSHash {
@@ -33,32 +30,9 @@ impl HOTSHash {
         assert_eq!(inputs.len(), HOTS_WIDTH << 1);
         assert_eq!(self.param_h.len(), HOTS_WIDTH << 1);
 
-        let mut res = HVCNTTPoly::default();
-        let mut inputs = inputs.to_vec();
-        inputs.iter_mut().for_each(|x| x.lift());
-
-        #[cfg(feature = "parallel")]
-        let prod_ntt: Vec<HVCNTTPoly> = self
-            .param_h
-            .iter()
-            .zip(inputs.iter())
-            .map(|(x, y)| (*x, *y))
-            .collect::<Vec<(HVCNTTPoly, HVCPoly)>>()
-            .into_par_iter()
-            .map(|(x, y)| x * HVCNTTPoly::from(&y))
-            .collect();
-
-        #[cfg(not(feature = "parallel"))]
-        let prod_ntt: Vec<HOTSNTTPoly> = self
-            .param_h
-            .iter()
-            .zip(inputs.iter())
-            .map(|(x, y)| *x * HOTSNTTPoly::from(y))
-            .collect();
-
-        for e in prod_ntt {
-            res += e;
-        }
+        let inputs_ntt: [HVCNTTPoly; HOTS_WIDTH << 1] =
+            std::array::from_fn(|i| HVCNTTPoly::from(&inputs[i]));
+        let res = pointwise_dot(&self.param_h, &inputs_ntt);
 
         // convert the polynomial from NTT domain back to integers
         (&res).into()
@@ -72,7 +46,14 @@ impl HOTSHash {
         assert_eq!(left.len(), HOTS_WIDTH);
         assert_eq!(right.len(), HOTS_WIDTH);
 
-        self.hash([left, right].concat().as_ref())
+        let inputs_ntt: [HVCNTTPoly; HOTS_WIDTH << 1] = std::array::from_fn(|i| {
+            if i < HOTS_WIDTH {
+                HVCNTTPoly::from(&left[i])
+            } else {
+                HVCNTTPoly::from(&right[i - HOTS_WIDTH])
+            }
+        });
+        HVCPoly::from(&pointwise_dot(&self.param_h, &inputs_ntt))
     }
 }
 

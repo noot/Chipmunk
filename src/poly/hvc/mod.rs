@@ -13,14 +13,17 @@ use sha2::Sha256;
 use std::ops::Mul;
 
 mod hvc_ntt;
-mod hvc_ntt_param;
 
-pub use hvc_ntt::HVCNTTPoly;
+pub use hvc_ntt::{pointwise_dot, HVCNTTPoly};
+
+pub fn pointwise_sum_polys(vs: &[&HVCPoly]) -> HVCPoly {
+    vs.iter().fold(HVCPoly::default(), |acc, poly| acc + **poly)
+}
 
 #[derive(Debug, Clone, Copy)]
 // HVC polynomials in canonical encoding
 pub struct HVCPoly {
-    pub(crate) coeffs: [i32; N as usize],
+    pub(crate) coeffs: [i32; N],
 }
 
 impl_signed_poly!(HVCPoly, HVC_MODULUS, N);
@@ -43,12 +46,36 @@ impl Mul for HVCPoly {
 }
 
 impl HVCPoly {
+    pub fn from_coeffs(coeffs: [i32; N]) -> Self {
+        Self { coeffs }
+    }
+
+    pub fn coeffs(&self) -> &[i32; N] {
+        &self.coeffs
+    }
+
+    pub fn coeffs_mut(&mut self) -> &mut [i32; N] {
+        &mut self.coeffs
+    }
+
+    pub fn rand_poly<R: Rng>(rng: &mut R) -> Self {
+        <Self as Polynomial>::rand_poly(rng)
+    }
+
+    pub fn rand_ternary<R: Rng>(rng: &mut R, weight: usize) -> Self {
+        <Self as Polynomial>::rand_ternary(rng, weight)
+    }
+
+    pub fn infinity_norm(&self) -> u32 {
+        <Self as Polynomial>::infinity_norm(self)
+    }
+
     /// decompose a polynomial into binary polynomials
     pub fn decompose_zz(&self) -> [HVCPoly; HVC_WIDTH] {
         let mut res = [HVCPoly::default(); HVC_WIDTH];
-        let mut tmp = self.coeffs.clone();
+        let mut tmp = self.coeffs;
         for poly in res.iter_mut() {
-            for (tar_coeff, cur_coeff) in (*poly).coeffs.iter_mut().zip(tmp.iter_mut()) {
+            for (tar_coeff, cur_coeff) in poly.coeffs.iter_mut().zip(tmp.iter_mut()) {
                 *tar_coeff = normalize(*cur_coeff, TWO_ZETA_PLUS_ONE as i32);
                 *cur_coeff = (*cur_coeff - *tar_coeff) / TWO_ZETA_PLUS_ONE as i32;
             }
@@ -77,7 +104,7 @@ impl HVCPoly {
             .map(|&x| normalize(x, HVC_MODULUS))
             .collect();
         for poly in res.iter_mut() {
-            for (tar_coeff, cur_coeff) in (*poly).coeffs.iter_mut().zip(base_coeffs.iter_mut()) {
+            for (tar_coeff, cur_coeff) in poly.coeffs.iter_mut().zip(base_coeffs.iter_mut()) {
                 *tar_coeff = normalize(*cur_coeff, TWO_ZETA_PLUS_ONE as i32);
                 *cur_coeff = (*cur_coeff - *tar_coeff) / TWO_ZETA_PLUS_ONE as i32;
             }
@@ -132,7 +159,6 @@ impl HVCPoly {
 
 #[cfg(test)]
 mod test {
-    use crate::poly::Polynomial;
     use rand::{RngCore, SeedableRng};
     use rand_chacha::ChaCha20Rng;
 

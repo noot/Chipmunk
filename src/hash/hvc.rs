@@ -1,10 +1,7 @@
 use ark_std::{end_timer, start_timer, Zero};
 use rand::Rng;
 
-use crate::poly::Polynomial;
-use crate::{HVCNTTPoly, HVCPoly, HVC_MODULUS, HVC_WIDTH};
-#[cfg(feature = "parallel")]
-use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use crate::{pointwise_dot, HVCNTTPoly, HVCPoly, HVC_MODULUS, HVC_WIDTH};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct HVCHash {
@@ -54,9 +51,9 @@ impl HVCHash {
         {
             let mut tmp1 = 0;
             let mut tmp2 = 0;
-            let xgcd = xgcd(*f, HVC_MODULUS as i32, &mut tmp1, &mut tmp2);
+            let xgcd = xgcd(*f as i32, HVC_MODULUS, &mut tmp1, &mut tmp2);
             assert!(xgcd == 1 || xgcd == -1);
-            *e = tmp1 * xgcd;
+            *e = (tmp1 * xgcd).rem_euclid(HVC_MODULUS) as u32;
         }
         end_timer!(timer);
         res
@@ -70,52 +67,37 @@ impl HVCHash {
         assert_eq!(inputs.len(), HVC_WIDTH << 1);
         assert_eq!(self.param_h.len(), HVC_WIDTH << 1);
 
-        let mut res = HVCNTTPoly::default();
-        let mut inputs = inputs.to_vec();
-        inputs.iter_mut().for_each(|x| x.lift());
-
-        #[cfg(feature = "parallel")]
-        let prod_ntt: Vec<HVCNTTPoly> = self
-            .param_h
-            .iter()
-            .zip(inputs.iter())
-            .map(|(x, y)| (*x, *y))
-            .collect::<Vec<(HVCNTTPoly, HVCPoly)>>()
-            .into_par_iter()
-            .map(|(x, y)| x * HVCNTTPoly::from(&y))
-            .collect();
-
-        #[cfg(not(feature = "parallel"))]
-        let prod_ntt: Vec<HVCNTTPoly> = self
-            .param_h
-            .iter()
-            .zip(inputs.iter())
-            .map(|(x, y)| *x * HVCNTTPoly::from(y))
-            .collect();
-
-        for e in prod_ntt {
-            res += e;
-        }
+        let inputs_ntt: [HVCNTTPoly; HVC_WIDTH << 1] =
+            std::array::from_fn(|i| HVCNTTPoly::from(&inputs[i]));
+        let res = pointwise_dot(&self.param_h, &inputs_ntt);
 
         // convert the polynomial from NTT domain back to integers
         (&res).into()
     }
 
-    pub(crate) fn decom_then_hash(&self, left: &HVCPoly, right: &HVCPoly) -> HVCPoly {
+    pub fn decom_then_hash(&self, left: &HVCPoly, right: &HVCPoly) -> HVCPoly {
         self.hash_separate_inputs(&left.decompose_r(), &right.decompose_r())
     }
 
-    pub(crate) fn hash_separate_inputs(&self, left: &[HVCPoly], right: &[HVCPoly]) -> HVCPoly {
+    pub fn hash_separate_inputs(&self, left: &[HVCPoly], right: &[HVCPoly]) -> HVCPoly {
         assert_eq!(left.len(), HVC_WIDTH);
         assert_eq!(right.len(), HVC_WIDTH);
 
-        self.hash([left, right].concat().as_ref())
+        let inputs_ntt: [HVCNTTPoly; HVC_WIDTH << 1] = std::array::from_fn(|i| {
+            if i < HVC_WIDTH {
+                HVCNTTPoly::from(&left[i])
+            } else {
+                HVCNTTPoly::from(&right[i - HVC_WIDTH])
+            }
+        });
+        HVCPoly::from(&pointwise_dot(&self.param_h, &inputs_ntt))
     }
 
     /// inputs
     /// - the left inputs to the hash
     /// - the right inputs to the hash, except the last one
     /// - the final output
+    ///
     /// output
     /// - the missing right input
     pub(crate) fn derive_missing_input(
@@ -161,7 +143,7 @@ mod test {
         let hasher = HVCHash::init(&mut rng);
 
         let inputs: Vec<HVCPoly> = (0..HVC_WIDTH << 1)
-            .map(|_| HVCPoly::rand_poly(&mut rng).into())
+            .map(|_| HVCPoly::rand_poly(&mut rng))
             .collect();
         let output = hasher.hash(&inputs);
         let left = inputs[0..HVC_WIDTH].to_vec();
@@ -195,7 +177,7 @@ mod test {
                     .map(|(&x, &y)| x + y)
                     .collect();
                 let poly_rec = HVCPoly::projection_r(&decomposed);
-                let poly = poly1 * r1.into() + poly2 * r2.into();
+                let poly = poly1 * r1 + poly2 * r2;
                 assert_eq!(poly, poly_rec);
             }
             // hash is homomorphic
@@ -219,7 +201,7 @@ mod test {
 
                 let poly1 = hasher.decom_then_hash(&poly11, &poly12);
                 let poly2 = hasher.decom_then_hash(&poly21, &poly22);
-                let poly = poly1 * r1.into() + poly2 * r2.into();
+                let poly = poly1 * r1 + poly2 * r2;
 
                 let polyx1_randomized: Vec<HVCPoly> = poly11_randomized
                     .iter()

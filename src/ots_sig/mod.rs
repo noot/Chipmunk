@@ -195,7 +195,6 @@ pub(crate) fn batch_verify_with_aggregated_pk(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::poly::Polynomial;
     use rand::RngCore;
 
     #[test]

@@ -7,7 +7,7 @@ macro_rules! impl_poly {
                     .iter()
                     .zip(rhs.coeffs.iter())
                     .map(|(&x, &y)| {
-                        crate::poly::lift(x, $modulus) == crate::poly::lift(y, $modulus)
+                        $crate::poly::lift(x, $modulus) == $crate::poly::lift(y, $modulus)
                     })
                     .fold(true, |acc, x| acc & x)
             }
@@ -48,7 +48,7 @@ macro_rules! impl_poly {
                 self.coeffs
                     .iter_mut()
                     .zip(other.coeffs)
-                    .for_each(|(x, y)| *x = (*x + y) % $modulus as i32)
+                    .for_each(|(x, y)| *x = ((*x as i64 + y as i64) % $modulus as i64) as i32)
             }
         }
 
@@ -69,7 +69,7 @@ macro_rules! impl_poly {
                 self.coeffs
                     .iter_mut()
                     .zip(other.coeffs)
-                    .for_each(|(x, y)| *x = (*x - y) % $modulus as i32)
+                    .for_each(|(x, y)| *x = ((*x as i64 - y as i64) % $modulus as i64) as i32)
             }
         }
     };
@@ -78,7 +78,7 @@ macro_rules! impl_poly {
 #[macro_export]
 macro_rules! impl_signed_poly {
     ($poly:ident, $modulus:ident, $dim:ident) => {
-        crate::impl_poly!($poly, $modulus, $dim);
+        $crate::impl_poly!($poly, $modulus, $dim);
 
         impl From<&$poly> for TerPolyCoeffEncoding {
             fn from(poly: &$poly) -> Self {
@@ -237,8 +237,8 @@ macro_rules! impl_ntt_poly {
 #[macro_export]
 macro_rules! impl_signed_poly_functions {
     ($poly:ident, $ntt_poly:ident, $modulus:ident, $dim:ident, $modulus_over_2:ident, $sample_threshold:ident) => {
-        use crate::ALPHA_H;
         use rand::SeedableRng;
+        use $crate::ALPHA_H;
 
         impl Polynomial for $poly {
             const DIM: usize = $dim;
@@ -251,16 +251,16 @@ macro_rules! impl_signed_poly_functions {
             // school book multiplication
             // slow. only used for correctness checking
             fn schoolbook(a: &Self, b: &Self) -> Self {
-                let mut buf = [0i32; $dim * 2];
+                let mut buf = [0i64; $dim * 2];
                 let mut c = [0; $dim];
                 for i in 0..$dim {
                     for j in 0..$dim {
-                        buf[i + j] +=
-                            ((a.coeffs[i] as i64) * (b.coeffs[j] as i64) % $modulus as i64) as i32;
+                        buf[i + j] += a.coeffs[i] as i64 * b.coeffs[j] as i64 % $modulus as i64;
                     }
                 }
                 for i in 0..$dim {
-                    c[i] = crate::poly::lift(buf[i] - buf[i + $dim as usize], $modulus) as i32;
+                    let value = (buf[i] - buf[i + $dim as usize]) % $modulus as i64;
+                    c[i] = $crate::poly::lift(value as i32, $modulus);
                 }
                 Self { coeffs: c }
             }
@@ -294,7 +294,7 @@ macro_rules! impl_signed_poly_functions {
             /// If the polynomial's coefficients are ternary
             fn is_ternary(&self) -> bool {
                 for &e in self.coeffs.iter() {
-                    if e != 1 && e != -1 {
+                    if !matches!(e, -1..=1) {
                         return false;
                     }
                 }
@@ -309,10 +309,10 @@ macro_rules! impl_signed_poly_functions {
                 let mut tmp = rng.next_u32();
 
                 while ct < half_weight {
-                    let index = (tmp & 0x1FF) as usize;
-                    tmp >>= 9;
+                    let index = (tmp & ($dim as u32 - 1)) as usize;
+                    tmp >>= $crate::LOG_N;
                     rng_ct += 1;
-                    if rng_ct == 3 {
+                    if rng_ct == 32 / $crate::LOG_N {
                         tmp = rng.next_u32();
                         rng_ct = 0;
                     }
@@ -323,10 +323,10 @@ macro_rules! impl_signed_poly_functions {
                 }
                 ct = 0;
                 while ct < half_weight {
-                    let index = (tmp & 0x1FF) as usize;
-                    tmp >>= 9;
+                    let index = (tmp & ($dim as u32 - 1)) as usize;
+                    tmp >>= $crate::LOG_N;
                     rng_ct += 1;
-                    if rng_ct == 3 {
+                    if rng_ct == 32 / $crate::LOG_N {
                         tmp = rng.next_u32();
                         rng_ct = 0;
                     }
@@ -342,7 +342,7 @@ macro_rules! impl_signed_poly_functions {
             /// Sample a random binary polynomial
             fn rand_binary<R: Rng>(rng: &mut R) -> Self {
                 let mut res = Self::default();
-                for i in 0..16 {
+                for i in 0..($dim / 32) {
                     let mut tmp = rng.next_u32();
                     for j in 0..32 {
                         res.coeffs[i * 32 + j] = (tmp & 1) as i32;
@@ -362,7 +362,7 @@ macro_rules! impl_signed_poly_functions {
                     let tmp = rng.next_u32() as usize;
                     if res.coeffs[(tmp % $dim) as usize] == 0 {
                         ct += 1;
-                        if (tmp >> 9) & 1 == 1 {
+                        if (tmp >> $crate::LOG_N) & 1 == 1 {
                             res.coeffs[(tmp % $dim) as usize] = 1;
                         } else {
                             res.coeffs[(tmp % $dim) as usize] = -1;
@@ -380,7 +380,7 @@ macro_rules! impl_signed_poly_functions {
                 let threshold = u32::MAX / modulus * modulus;
                 for e in res.coeffs.iter_mut() {
                     let mut tmp = rng.next_u32();
-                    while tmp > threshold {
+                    while tmp >= threshold {
                         tmp = rng.next_u32();
                     }
 

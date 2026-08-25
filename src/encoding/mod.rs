@@ -1,15 +1,12 @@
 use std::io::{Read, Write};
 
-use crate::{
-    normalize, HVCPoly, Polynomial, ENCODING_NORM_BOUND, HVC_MODULUS, HVC_WIDTH, N,
-    TWO_ZETA_PLUS_ONE, ZETA,
-};
+use crate::{HVCPoly, ENCODING_NORM_BOUND, HVC_MODULUS, HVC_WIDTH, N, TWO_ZETA_PLUS_ONE};
 
 // TODO: alpha 1/2/3 has structures. we may use a better algorithm to compress them.
 #[derive(Debug, Clone, Default)]
 pub struct EncodedPoly {
     // Hint is only used to check the correctness of the algorithm.
-    // It is not send to the verifier -- verifier can compute it locally. 
+    // It is not send to the verifier -- verifier can compute it locally.
     hint: HVCPoly,
     pub(crate) a_star: HVCPoly,
     pub(crate) alphas: Vec<HVCPoly>,
@@ -44,8 +41,7 @@ impl EncodedPoly {
     }
 
     pub(crate) fn deserialize<R: Read>(mut _reader: R) -> Self {
-        let mut _res = Self::default();
-        _res
+        Self::default()
     }
 
     pub(crate) fn encode(polys: &[HVCPoly]) -> EncodedPoly {
@@ -236,8 +232,8 @@ mod tests {
 
         let mut encodeds = vec![];
         let encoding = start_timer!(|| format!("encode {} times", size));
-        for i in 0..size {
-            let encoded = EncodedPoly::encode(&decomposed_sums[i]);
+        for decomposed_sum in &decomposed_sums {
+            let encoded = EncodedPoly::encode(decomposed_sum);
             encodeds.push(encoded);
         }
         end_timer!(encoding);

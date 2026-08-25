@@ -12,6 +12,7 @@ pub use hots::HOTSNTTPoly;
 pub use hots::HOTSPoly;
 pub use hvc::HVCNTTPoly;
 pub use hvc::HVCPoly;
+pub use hvc::{pointwise_dot, pointwise_sum_polys};
 use rand::Rng;
 pub use ter_poly::TerPolyCoeffEncoding;
 

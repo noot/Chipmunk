@@ -26,6 +26,8 @@ pub struct Tree {
 
     /// store the hash of leaf nodes from left to right
     leaf_nodes: Vec<HVCPoly>,
+
+    height: usize,
 }
 
 impl Display for Tree {
@@ -54,14 +56,18 @@ impl Tree {
         let timer = start_timer!(|| format!("generate new tree with {} leaves", leaf_nodes.len()));
 
         let len = leaf_nodes.len();
-        assert_eq!(len, 1 << (HEIGHT - 1), "incorrect leaf size");
+        assert!(
+            len >= 2 && len.is_power_of_two(),
+            "leaf count must be a power of two"
+        );
+        let height = len.trailing_zeros() as usize + 1;
 
-        let mut non_leaf_nodes = vec![HVCPoly::default(); (1 << (HEIGHT - 1)) - 1];
+        let mut non_leaf_nodes = vec![HVCPoly::default(); len - 1];
 
         // Compute the starting indices for each non-leaf level of the tree
         let mut index = 0;
-        let mut level_indices = Vec::with_capacity(HEIGHT - 1);
-        for _ in 0..(HEIGHT - 1) {
+        let mut level_indices = Vec::with_capacity(height - 1);
+        for _ in 0..(height - 1) {
             level_indices.push(index);
             index = left_child_index(index);
         }
@@ -109,7 +115,12 @@ impl Tree {
         Self {
             non_leaf_nodes,
             leaf_nodes: leaf_nodes.to_vec(),
+            height,
         }
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
     }
 
     pub fn root(&self) -> HVCPoly {
@@ -120,11 +131,11 @@ impl Tree {
     pub fn gen_proof(&self, index: usize) -> Path {
         let timer = start_timer!(|| "generate membership proof");
         // Get Leaf hash, and leaf sibling hash,
-        let leaf_index_in_tree = convert_index_to_last_level(index, HEIGHT);
+        let leaf_index_in_tree = convert_index_to_last_level(index, self.height);
 
         // path.len() = `tree height - 1`, the missing elements being the root
-        let mut nodes = Vec::with_capacity(HEIGHT - 1);
-        if index % 2 == 0 {
+        let mut nodes = Vec::with_capacity(self.height - 1);
+        if index.is_multiple_of(2) {
             nodes.push((self.leaf_nodes[index], self.leaf_nodes[index + 1]))
         } else {
             nodes.push((self.leaf_nodes[index - 1], self.leaf_nodes[index]))
@@ -203,7 +214,6 @@ fn is_left_child(index: usize) -> bool {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::poly::Polynomial;
     use rand::{RngCore, SeedableRng};
     use rand_chacha::ChaCha20Rng;
     #[test]

@@ -1,6 +1,7 @@
 // =================SHARED PARAM===============
-/// degree of polynomial
-pub const N: usize = 512;
+/// Degree used by Panetière and the commitment layer.
+pub const N: usize = 2048;
+pub const LOG_N: usize = N.trailing_zeros() as usize;
 /// Security parameter
 pub const SEC_PARAM: usize = 112;
 /// non-zero entries in randomizer
@@ -8,22 +9,22 @@ pub const ALPHA: usize = 16;
 /// Height of the tree
 pub const HEIGHT: usize = 5;
 /// base of the decomposition: the decomposed poly have coefficients between [-zeta, zeta]
-pub const ZETA: u32 = 29;
+pub const ZETA: u32 = 34;
 /// the arity: 2 * zeta + 1
-pub const TWO_ZETA_PLUS_ONE: u32 = 59;
+pub const TWO_ZETA_PLUS_ONE: u32 = 69;
 
 // =================HOTS PARAM=================
-/// q for large ring, HOTS modulus 3168257
-pub const HOTS_MODULUS: i32 = 3168257;
+/// HOTS modulus, prime and 1 modulo 2N.
+pub const HOTS_MODULUS: i32 = 3174401;
 /// 1/N mod q
-pub const HOTS_ONE_OVER_N: i32 = 3162069;
+pub const HOTS_ONE_OVER_N: i32 = 3172851;
 /// (q-1)/2 = 1584128
-pub const HOTS_MODULUS_OVER_TWO: i32 = 1584128;
+pub const HOTS_MODULUS_OVER_TWO: i32 = 1587200;
 /// number of ring elements during decomposition
 /// require (2 * zeta + 1)^HOTS_WIDTH > HOTS_MODULUS
 pub const HOTS_WIDTH: usize = 4;
 /// the largest multiple of q that is smaller than 2^32
-pub const HOTS_SAMPLE_THRESHOLD: u32 = 4292988235;
+pub const HOTS_SAMPLE_THRESHOLD: u32 = 4294964553;
 /// the number of polynomials in a decomposed poly
 pub const GAMMA: usize = 6;
 /// hamming weight of the hash of the message
@@ -40,14 +41,14 @@ pub const PHI_ALPHA_H: u32 = 481;
 pub const PHI_ALPHA_H_SAMPLE_THRESHOLD: u32 = 4294966518;
 
 // =================HVC PARAM==================
-/// q for small ring, HVC modulus 202753
-pub const HVC_MODULUS: i32 = 202753;
+/// HVC modulus, prime and 1 modulo 2N.
+pub const HVC_MODULUS: i32 = 40961;
 /// 1/N mod q
-pub const HVC_ONE_OVER_N: i32 = 202357;
+pub const HVC_ONE_OVER_N: i32 = 40941;
 /// (q-1)/2
-pub const HVC_MODULUS_OVER_TWO: i32 = 101376;
+pub const HVC_MODULUS_OVER_TWO: i32 = 20480;
 /// the largest multiple of q that is smaller than 2^32
-pub const HVC_SAMPLE_THRESHOLD: u32 = 4294916799;
+pub const HVC_SAMPLE_THRESHOLD: u32 = 4294965655;
 /// number of ring elements during decomposition
 /// require (2 * zeta + 1)^HVC_WIDTH > HVC_MODULUS
 pub const HVC_WIDTH: usize = 3;

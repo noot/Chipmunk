@@ -1,7 +1,6 @@
 use ark_std::{end_timer, start_timer};
 use rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
-use crate::poly::Polynomial;
 use crate::{
     poly::HVCPoly, randomize_path::RandomizedPath, randomizer::Randomizers, HVCHash, HEIGHT,
 };
@@ -10,8 +9,8 @@ use std::fmt::Display;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Path {
-    pub(crate) nodes: Vec<(HVCPoly, HVCPoly)>, // left and right nodes
-    pub(crate) index: usize,
+    pub nodes: Vec<(HVCPoly, HVCPoly)>, // left and right nodes
+    pub index: usize,
 }
 
 impl Default for Path {
@@ -75,7 +74,7 @@ impl Path {
             })
             .collect::<Vec<_>>()
             .iter()
-            .fold(true, |acc, mk| acc && *mk);
+            .all(|mk| *mk);
 
         end_timer!(timer);
         checks

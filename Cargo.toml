@@ -13,8 +13,10 @@ sha2 = "0.10"
 log = { version = "0.4", features = ["std", "serde"] }
 env_logger = { version = "0.10" }
 ark-std = "0.4.0"
+negacyclic-rings = { git = "https://github.com/Ruteri/negacyclic-rings", branch = "main" }
 
 [features]
 # default = [ ]
 default = [ "parallel", "ark-std/print-trace" ]
-parallel = [] 
+parallel = []
+fast-ntt = []
