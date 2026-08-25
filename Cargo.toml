@@ -19,4 +19,3 @@ negacyclic-rings = { git = "https://github.com/Ruteri/negacyclic-rings", branch 
 # default = [ ]
 default = [ "parallel", "ark-std/print-trace" ]
 parallel = []
-fast-ntt = []
