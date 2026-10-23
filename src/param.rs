@@ -9,9 +9,9 @@ pub const ALPHA: usize = 16;
 /// Height of the tree
 pub const HEIGHT: usize = 5;
 /// base of the decomposition: the decomposed poly have coefficients between [-zeta, zeta]
-pub const ZETA: u32 = 34;
+pub const ZETA: u32 = 384;
 /// the arity: 2 * zeta + 1
-pub const TWO_ZETA_PLUS_ONE: u32 = 69;
+pub const TWO_ZETA_PLUS_ONE: u32 = 769;
 
 // =================HOTS PARAM=================
 /// HOTS modulus, prime and 1 modulo 2N.
@@ -42,16 +42,16 @@ pub const PHI_ALPHA_H_SAMPLE_THRESHOLD: u32 = 4294966518;
 
 // =================HVC PARAM==================
 /// HVC modulus, prime and 1 modulo 2N.
-pub const HVC_MODULUS: i32 = 40961;
+pub const HVC_MODULUS: i32 = 557057;
 /// 1/N mod q
-pub const HVC_ONE_OVER_N: i32 = 40941;
+pub const HVC_ONE_OVER_N: i32 = 556785;
 /// (q-1)/2
-pub const HVC_MODULUS_OVER_TWO: i32 = 20480;
+pub const HVC_MODULUS_OVER_TWO: i32 = 278528;
 /// the largest multiple of q that is smaller than 2^32
-pub const HVC_SAMPLE_THRESHOLD: u32 = 4294965655;
+pub const HVC_SAMPLE_THRESHOLD: u32 = 4294909470;
 /// number of ring elements during decomposition
 /// require (2 * zeta + 1)^HVC_WIDTH > HVC_MODULUS
-pub const HVC_WIDTH: usize = 3;
+pub const HVC_WIDTH: usize = 2;
 
 // =================ENCODING PARAM==================
 /// the norm bound for alphas and a_star
